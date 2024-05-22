@@ -9,6 +9,7 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionMediaProperties as MediaProperties,
     GlobalSystemMediaTransportControlsSessionPlaybackInfo as PlaybackInfo,
     GlobalSystemMediaTransportControlsSessionTimelineProperties as TimelineProperties,
+    GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
 
 use crate::media_info::MediaInfo;
@@ -18,6 +19,14 @@ pub fn micros_since_epoch() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_micros() as i64
+}
+
+pub fn nt_to_unix(time: i64) -> i64 {
+    // time in micros
+    // let sec_diff = 3124137600;
+    // let sec_diff =   11_644_473_600;
+    let sec_diff = 11_644_471_817;
+    time - sec_diff * 1_000_000
 }
 
 #[derive(Clone, Debug)]
@@ -97,6 +106,10 @@ impl Player {
     }
 
     async fn update_position(&mut self) {
+        if !self.media_info.is_playing {
+            return;
+        }
+
         // get current time (UTC)
         let cur = micros_since_epoch();
 
@@ -112,8 +125,9 @@ impl Player {
 
     async fn update_playback_info(&mut self) {
         if let Some(session) = &self.session {
-            #[allow(unused_variables)]
             let props: PlaybackInfo = session.GetPlaybackInfo().unwrap();
+
+            self.media_info.is_playing = props.PlaybackStatus().unwrap() == PlaybackStatus::Playing;
 
             self.update_callback();
         }
@@ -137,12 +151,13 @@ impl Player {
         if let Some(session) = &self.session {
             let props: TimelineProperties = session.GetTimelineProperties().unwrap();
 
-            // Windows' value is in seconds * 10^-7
+            // Windows' value is in seconds * 10^-7 (100 nanoseconds)
             // Mapping to micros (10^-6)
             self.media_info.duration = props.EndTime().unwrap().Duration / 10;
             self.media_info.pos_raw = props.Position().unwrap().Duration / 10;
 
-            self.media_info.pos_last_update = props.LastUpdatedTime().unwrap().UniversalTime;
+            // NT to UNIX in micros
+            self.media_info.pos_last_update = nt_to_unix(props.LastUpdatedTime().unwrap().UniversalTime / 10);
 
             self.update_callback();
         }

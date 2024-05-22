@@ -11,6 +11,8 @@ pub struct MediaInfo {
 
     pub pos_last_update: i64,
     pub pos_raw: i64,
+
+    pub is_playing: bool,
 }
 
 impl MediaInfo {
@@ -27,6 +29,8 @@ impl MediaInfo {
 
             pos_last_update: 0,
             pos_raw: 0,
+
+            is_playing: false,
         }
     }
 }
