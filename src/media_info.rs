@@ -7,6 +7,10 @@ pub struct MediaInfo {
     pub album_artist: String,
 
     pub duration: i64,
+    pub position: i64,
+
+    pub pos_last_update: i64,
+    pub pos_raw: i64,
 }
 
 impl MediaInfo {
@@ -19,6 +23,10 @@ impl MediaInfo {
             album_artist: String::new(),
 
             duration: 0,
+            position: 0,
+
+            pos_last_update: 0,
+            pos_raw: 0,
         }
     }
 }

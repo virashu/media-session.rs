@@ -3,12 +3,20 @@ use futures::executor::block_on;
 mod media_info;
 mod player;
 
+use media_info::MediaInfo;
 use player::Player;
 
-use crate::media_info::MediaInfo;
-
 fn update(info: MediaInfo) {
-    println!("Title: \x1b[32m{}\x1b[0m", info.title);
+    print!(
+        "\x1b[2J\x1b[1;1H\
+        \n\t-> Title: \x1b[32m{}\x1b[0m\
+        \n\t|  Artist: \x1b[32m{}\x1b[0m\
+        \n\t|  Position: \x1b[32m{}\x1b[0m/\x1b[31m{}\x1b[0m\
+        \n\t|  ~: \x1b[32m{}\x1b[0m\
+        \n\t|  @: \x1b[32m{}\x1b[0m
+        ",
+        info.title, info.artist, info.position, info.duration, info.pos_last_update, player::micros_since_epoch()
+    );
 }
 
 async fn start() {
@@ -17,7 +25,11 @@ async fn start() {
     player.create_session().await;
 
     // wait forever
-    loop {}
+    loop {
+        player.update().await;
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
 }
 
 fn main() {
