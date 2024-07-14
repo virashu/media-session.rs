@@ -13,7 +13,9 @@ use windows::Media::Control::{
 };
 
 use crate::media_info::MediaInfo;
+use crate::media_status::MediaStatus;
 
+/// Get UNIX time in microseconds
 pub fn micros_since_epoch() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -21,6 +23,7 @@ pub fn micros_since_epoch() -> i64 {
         .as_micros() as i64
 }
 
+/// Convert Windows NT time to UNIX time
 pub fn nt_to_unix(time: i64) -> i64 {
     let microsec_diff = 11_644_473_600_000_000;
     // let sec_diff = 11_644_471_817;
@@ -129,11 +132,11 @@ impl Player {
             self.media_info.is_playing = props.PlaybackStatus().unwrap() == PlaybackStatus::Playing;
 
             self.media_info.status = match props.PlaybackStatus().unwrap() {
-                PlaybackStatus::Playing => String::from("playing"),
-                PlaybackStatus::Paused => String::from("paused"),
-                PlaybackStatus::Stopped => String::from("stopped"),
+                PlaybackStatus::Playing => MediaStatus::Playing.into(),
+                PlaybackStatus::Paused => MediaStatus::Paused.into(),
+                PlaybackStatus::Stopped => MediaStatus::Stopped.into(),
 
-                _ => String::from("stopped"),
+                _ => MediaStatus::Stopped.into(),
             };
 
             self.update_callback();

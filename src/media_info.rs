@@ -1,3 +1,5 @@
+use crate::media_status::MediaStatus;
+
 #[derive(Clone, Debug)]
 pub struct MediaInfo {
     pub title: String,
@@ -31,7 +33,7 @@ impl MediaInfo {
             pos_last_update: 0,
             pos_raw: 0,
 
-            status: String::from("stopped"),
+            status: MediaStatus::Stopped.to_string(),
             is_playing: false,
         }
     }

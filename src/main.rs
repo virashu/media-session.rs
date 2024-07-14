@@ -1,8 +1,10 @@
 use futures::executor::block_on;
 
 use std::cmp::max;
+use std::time::Duration;
 
 mod media_info;
+mod media_status;
 mod player;
 
 use media_info::MediaInfo;
@@ -34,7 +36,9 @@ fn progress_bar_ascii(pos_percent: usize) -> String {
 
 fn update(info: MediaInfo) {
     let pos_percent: usize = (info.position as f64 / info.duration as f64 * 100.0) as usize;
-    let progress_bar = progress_bar_fira(pos_percent);
+
+    let progress_bar = progress_bar_fira(pos_percent); /* for Fira Code */
+    // let progress_bar = progress_bar_ascii(pos_percent); /* for other fonts */
 
     let pos_str = human_time(info.position);
     let dur_str = human_time(info.duration);
@@ -72,7 +76,7 @@ async fn start() {
     loop {
         player.update().await;
 
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
