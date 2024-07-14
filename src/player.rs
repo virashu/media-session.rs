@@ -8,8 +8,8 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionManager as MediaManager,
     GlobalSystemMediaTransportControlsSessionMediaProperties as MediaProperties,
     GlobalSystemMediaTransportControlsSessionPlaybackInfo as PlaybackInfo,
-    GlobalSystemMediaTransportControlsSessionTimelineProperties as TimelineProperties,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
+    GlobalSystemMediaTransportControlsSessionTimelineProperties as TimelineProperties,
 };
 
 use crate::media_info::MediaInfo;
@@ -22,11 +22,9 @@ pub fn micros_since_epoch() -> i64 {
 }
 
 pub fn nt_to_unix(time: i64) -> i64 {
-    // time in micros
-    // let sec_diff = 3124137600;
-    // let sec_diff =   11_644_473_600;
-    let sec_diff = 11_644_471_817;
-    time - sec_diff * 1_000_000
+    let microsec_diff = 11_644_473_600_000_000;
+    // let sec_diff = 11_644_471_817;
+    time - microsec_diff
 }
 
 #[derive(Clone, Debug)]
@@ -106,15 +104,16 @@ impl Player {
     }
 
     async fn update_position(&mut self) {
-        if !self.media_info.is_playing {
-            return;
+        match self.media_info.status.as_ref() {
+            "stopped" => self.media_info.position = 0,
+            "paused" => self.media_info.position = self.media_info.pos_raw,
+            "playing" => {
+                self.media_info.position = self.media_info.pos_raw
+                    + (micros_since_epoch() - self.media_info.pos_last_update) // * playback_rate
+            }
+
+            _ => self.media_info.position = 0,
         }
-
-        // get current time (UTC)
-        let cur = micros_since_epoch();
-
-        self.media_info.position =
-            self.media_info.pos_raw + (cur - self.media_info.pos_last_update);
     }
 
     #[allow(dead_code)] // For external use
@@ -128,6 +127,14 @@ impl Player {
             let props: PlaybackInfo = session.GetPlaybackInfo().unwrap();
 
             self.media_info.is_playing = props.PlaybackStatus().unwrap() == PlaybackStatus::Playing;
+
+            self.media_info.status = match props.PlaybackStatus().unwrap() {
+                PlaybackStatus::Playing => String::from("playing"),
+                PlaybackStatus::Paused => String::from("paused"),
+                PlaybackStatus::Stopped => String::from("stopped"),
+
+                _ => String::from("stopped"),
+            };
 
             self.update_callback();
         }
@@ -157,7 +164,8 @@ impl Player {
             self.media_info.pos_raw = props.Position().unwrap().Duration / 10;
 
             // NT to UNIX in micros
-            self.media_info.pos_last_update = nt_to_unix(props.LastUpdatedTime().unwrap().UniversalTime / 10);
+            self.media_info.pos_last_update =
+                nt_to_unix(props.LastUpdatedTime().unwrap().UniversalTime / 10);
 
             self.update_callback();
         }

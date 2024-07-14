@@ -1,22 +1,67 @@
 use futures::executor::block_on;
 
+use std::cmp::max;
+
 mod media_info;
 mod player;
 
 use media_info::MediaInfo;
 use player::Player;
 
+fn human_time(microsecs: i64) -> String {
+    let secs = microsecs / 1_000_000;
+
+    (secs / 60).to_string() + ":" + &format!("{:02}", secs % 60)
+}
+
+fn progress_bar_fira(pos_percent: usize) -> String {
+    let center = "".repeat(max(pos_percent as i64 - 2, 0) as usize) + &"".repeat(max(100 - pos_percent as i64 - 2, 0) as usize);
+
+    let start = if pos_percent >= 1 { "" } else { "" };
+    let end = if pos_percent >= 100 { "" } else { "" };
+
+    format!("{}{}{}", start, center, end)
+}
+
+fn progress_bar_ascii(pos_percent: usize) -> String {
+    let center = "=".repeat(pos_percent) + &" ".repeat(100 - pos_percent);
+
+    let start = "[";
+    let end = "]";
+
+    format!("{}{}{}", start, center, end)
+}
+
 fn update(info: MediaInfo) {
+    let pos_percent: usize = (info.position as f64 / info.duration as f64 * 100.0) as usize;
+    let progress_bar = progress_bar_fira(pos_percent);
+
+    let pos_str = human_time(info.position);
+    let dur_str = human_time(info.duration);
+
+    print!("\x1b[?25l\x1b[2J\x1b[1;1H");
+
     print!(
-        "\x1b[?25l\x1b[2J\x1b[1;1H\
-        \n\t-> Title: \x1b[32m{}\x1b[0m\
-        \n\t|  Artist: \x1b[32m{}\x1b[0m\
-        \n\t|  Position: \x1b[32m{}\x1b[0m/\x1b[31m{}\x1b[0m\
-        \n\t|  ~: \x1b[32m{}\x1b[0m\
-        \n\t|  @: \x1b[32m{}\x1b[0m
-        \x1b[?25h",
-        info.title, info.artist, info.position, info.duration, info.pos_last_update, player::micros_since_epoch()
+        "\
+        \t\x1b[1;32m{}\x1b[22;0m\
+        \n\t\x1b[3mby \x1b[32m{}\x1b[0m\x1b[23m\
+        \n\n {} {} {}
+        ",
+        info.title, info.artist, pos_str, progress_bar, dur_str,
     );
+
+    print!("\x1b[?25h");
+
+    // print!(
+    //     "\
+    //       \t|  Position: \x1b[32m{}\x1b[0m/\x1b[31m{}\x1b[0m\
+    //     \n\t|  ~: \x1b[32m{}\x1b[0m\
+    //     \n\t|  @: \x1b[32m{}\x1b[0m",
+    //     info.position,
+    //     info.duration,
+    //     info.pos_last_update,
+    //     player::micros_since_epoch(),
+    // )
 }
 
 async fn start() {
@@ -24,7 +69,6 @@ async fn start() {
 
     player.create_session().await;
 
-    // wait forever
     loop {
         player.update().await;
 

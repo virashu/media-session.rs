@@ -12,6 +12,7 @@ pub struct MediaInfo {
     pub pos_last_update: i64,
     pub pos_raw: i64,
 
+    pub status: String, // stopped, paused, playing
     pub is_playing: bool,
 }
 
@@ -30,6 +31,7 @@ impl MediaInfo {
             pos_last_update: 0,
             pos_raw: 0,
 
+            status: String::from("stopped"),
             is_playing: false,
         }
     }
