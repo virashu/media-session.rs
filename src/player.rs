@@ -119,9 +119,19 @@ impl Player {
     }
 
     #[allow(dead_code)] // For external use
-    pub async fn get_info(&mut self) -> MediaInfo {
-        self.update_position().await;
-        self.media_info.clone()
+    pub async fn get_info(self) -> MediaInfo {
+        let mut mi = self.media_info.clone();
+
+        match MediaStatus::from_str(mi.status.as_ref()) {
+            MediaStatus::Stopped => mi.position = 0,
+            MediaStatus::Paused => mi.position = mi.pos_raw,
+            MediaStatus::Playing => {
+                mi.position = mi.pos_raw
+                    + (micros_since_epoch() - mi.pos_last_update) // * playback_rate
+            }
+        }
+
+        mi
     }
 
     async fn update_playback_info(&mut self) {
