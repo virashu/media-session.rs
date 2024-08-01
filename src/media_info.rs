@@ -33,7 +33,7 @@ impl MediaInfo {
             pos_last_update: 0,
             pos_raw: 0,
 
-            status: MediaStatus::Stopped.to_string(),
+            status: MediaStatus::Stopped.into(),
             is_playing: false,
         }
     }

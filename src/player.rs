@@ -92,6 +92,7 @@ impl Player {
             callback(self.media_info.clone());
         }
     }
+
     #[allow(dead_code)] // For external use
     pub async fn get_session(&self) -> Option<MediaSession> {
         self.session.clone()
@@ -107,15 +108,13 @@ impl Player {
     }
 
     async fn update_position(&mut self) {
-        match self.media_info.status.as_ref() {
-            "stopped" => self.media_info.position = 0,
-            "paused" => self.media_info.position = self.media_info.pos_raw,
-            "playing" => {
+        match MediaStatus::from_str(self.media_info.status.as_ref()) {
+            MediaStatus::Stopped => self.media_info.position = 0,
+            MediaStatus::Paused => self.media_info.position = self.media_info.pos_raw,
+            MediaStatus::Playing => {
                 self.media_info.position = self.media_info.pos_raw
                     + (micros_since_epoch() - self.media_info.pos_last_update) // * playback_rate
             }
-
-            _ => self.media_info.position = 0,
         }
     }
 
