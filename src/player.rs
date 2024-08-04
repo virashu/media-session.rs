@@ -39,13 +39,17 @@ pub struct Player {
 }
 
 impl Player {
-    pub async fn new(callback: fn(MediaInfo)) -> Player {
-        Player {
-            callback: Some(callback),
+    pub async fn new() -> Self {
+        Self {
+            callback: None,
             manager: MediaManager::RequestAsync().unwrap().await.unwrap(),
             media_info: MediaInfo::new(),
             session: None,
         }
+    }
+
+    pub async fn set_callback(&mut self, callback: fn(MediaInfo)) {
+        self.callback = Some(callback);
     }
 
     pub async fn create_session(&mut self) {

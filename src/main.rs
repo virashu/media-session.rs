@@ -54,8 +54,9 @@ fn update(info: MediaInfo) {
 }
 
 async fn start() {
-    let mut player = Player::new(update).await;
-
+    let mut player = Player::new().await;
+    
+    player.set_callback(update).await;
     player.create_session().await;
 
     loop {
