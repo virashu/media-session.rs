@@ -1,10 +1,11 @@
 use futures::executor::block_on;
 
+use std::cmp::min;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use windows::Foundation::TypedEventHandler;
 use windows::Media::Control::{
-    GlobalSystemMediaTransportControlsSession as MediaSession,
+    GlobalSystemMediaTransportControlsSession as WRT_MediaSession,
     GlobalSystemMediaTransportControlsSessionManager as MediaManager,
     GlobalSystemMediaTransportControlsSessionMediaProperties as MediaProperties,
     GlobalSystemMediaTransportControlsSessionPlaybackInfo as PlaybackInfo,
@@ -13,7 +14,8 @@ use windows::Media::Control::{
 };
 
 use crate::media_info::MediaInfo;
-use crate::media_status::MediaStatus;
+use crate::playback_state::PlaybackState;
+use crate::media_info::MediaInfoInternal;
 
 /// Get UNIX time in microseconds
 pub fn micros_since_epoch() -> i64 {
@@ -31,19 +33,19 @@ pub fn nt_to_unix(time: i64) -> i64 {
 }
 
 #[derive(Clone, Debug)]
-pub struct Player {
+pub struct MediaSession {
     callback: Option<fn(MediaInfo)>,
     manager: MediaManager,
-    media_info: MediaInfo,
-    session: Option<MediaSession>,
+    media_info: MediaInfoInternal,
+    session: Option<WRT_MediaSession>,
 }
 
-impl Player {
+impl MediaSession {
     pub async fn new() -> Self {
         Self {
             callback: None,
             manager: MediaManager::RequestAsync().unwrap().await.unwrap(),
-            media_info: MediaInfo::new(),
+            media_info: MediaInfoInternal::new(),
             session: None,
         }
     }
@@ -53,7 +55,7 @@ impl Player {
     }
 
     pub async fn create_session(&mut self) {
-        let session: Result<MediaSession, _> = self.manager.GetCurrentSession();
+        let session: Result<WRT_MediaSession, _> = self.manager.GetCurrentSession();
 
         if let Ok(session) = session {
             self.session = Some(session);
@@ -93,12 +95,12 @@ impl Player {
 
     pub fn update_callback(&self) {
         if let Some(callback) = &self.callback {
-            callback(self.media_info.clone());
+            callback(self.media_info.info.clone());
         }
     }
 
     #[allow(dead_code)] // For external use
-    pub async fn get_session(&self) -> Option<MediaSession> {
+    pub async fn get_session(&self) -> Option<WRT_MediaSession> {
         self.session.clone()
     }
 
@@ -112,11 +114,11 @@ impl Player {
     }
 
     async fn update_position(&mut self) {
-        match MediaStatus::from_str(self.media_info.status.as_ref()) {
-            MediaStatus::Stopped => self.media_info.position = 0,
-            MediaStatus::Paused => self.media_info.position = self.media_info.pos_raw,
-            MediaStatus::Playing => {
-                self.media_info.position = self.media_info.pos_raw
+        match PlaybackState::from_str(self.media_info.info.state.as_ref()) {
+            PlaybackState::Stopped => self.media_info.info.position = 0,
+            PlaybackState::Paused => self.media_info.info.position = self.media_info.pos_raw,
+            PlaybackState::Playing => {
+                self.media_info.info.position = self.media_info.pos_raw
                     + (micros_since_epoch() - self.media_info.pos_last_update) // * playback_rate
             }
         }
@@ -124,33 +126,37 @@ impl Player {
 
     #[allow(dead_code)] // For external use
     pub async fn get_info(self) -> MediaInfo {
-        let mut mi = self.media_info.clone();
+        let mut info = self.media_info.info.clone();
+        let wrapper = self.media_info;
 
-        match MediaStatus::from_str(mi.status.as_ref()) {
-            MediaStatus::Stopped => mi.position = 0,
-            MediaStatus::Paused => mi.position = mi.pos_raw,
-            MediaStatus::Playing => {
-                mi.position = mi.pos_raw
-                    + (micros_since_epoch() - mi.pos_last_update) // * playback_rate
+        match PlaybackState::from_str(info.state.as_ref()) {
+            PlaybackState::Stopped => info.position = 0,
+            PlaybackState::Paused => info.position = wrapper.pos_raw,
+            PlaybackState::Playing => {
+                let update_delta = micros_since_epoch() - wrapper.pos_last_update;
+                let track_delta = update_delta as f64 * info.playback_rate;
+                let position = min(info.duration, wrapper.pos_raw + track_delta.round() as i64);
+                info.position = position;
             }
         }
 
-        mi
+        info
     }
 
     async fn update_playback_info(&mut self) {
         if let Some(session) = &self.session {
             let props: PlaybackInfo = session.GetPlaybackInfo().unwrap();
 
-            self.media_info.is_playing = props.PlaybackStatus().unwrap() == PlaybackStatus::Playing;
+            self.media_info.info.is_playing = props.PlaybackStatus().unwrap() == PlaybackStatus::Playing;
 
-            self.media_info.status = match props.PlaybackStatus().unwrap() {
-                PlaybackStatus::Playing => MediaStatus::Playing.into(),
-                PlaybackStatus::Paused => MediaStatus::Paused.into(),
-                PlaybackStatus::Stopped => MediaStatus::Stopped.into(),
+            self.media_info.info.state = match props.PlaybackStatus().unwrap() {
+                PlaybackStatus::Playing => PlaybackState::Playing.into(),
+                PlaybackStatus::Paused => PlaybackState::Paused.into(),
+                PlaybackStatus::Stopped => PlaybackState::Stopped.into(),
 
-                _ => MediaStatus::Stopped.into(),
+                _ => PlaybackState::Stopped.into(),
             };
+            self.media_info.info.playback_rate = props.PlaybackRate().unwrap().Value().unwrap();
 
             self.update_callback();
         }
@@ -161,10 +167,10 @@ impl Player {
             let props: MediaProperties =
                 session.TryGetMediaPropertiesAsync().unwrap().await.unwrap();
 
-            self.media_info.title = props.Title().unwrap().to_string();
-            self.media_info.artist = props.Artist().unwrap().to_string();
-            self.media_info.album_title = props.AlbumTitle().unwrap().to_string();
-            self.media_info.album_artist = props.AlbumArtist().unwrap().to_string();
+            self.media_info.info.title = props.Title().unwrap().to_string();
+            self.media_info.info.artist = props.Artist().unwrap().to_string();
+            self.media_info.info.album_title = props.AlbumTitle().unwrap().to_string();
+            self.media_info.info.album_artist = props.AlbumArtist().unwrap().to_string();
 
             self.update_callback();
         }
@@ -176,7 +182,7 @@ impl Player {
 
             // Windows' value is in seconds * 10^-7 (100 nanoseconds)
             // Mapping to micros (10^-6)
-            self.media_info.duration = props.EndTime().unwrap().Duration / 10;
+            self.media_info.info.duration = props.EndTime().unwrap().Duration / 10;
             self.media_info.pos_raw = props.Position().unwrap().Duration / 10;
 
             // NT to UNIX in micros

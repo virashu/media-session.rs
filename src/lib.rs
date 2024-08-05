@@ -1,6 +1,6 @@
 pub mod media_info;
-pub mod media_status;
-pub mod player;
+pub mod playback_state;
+pub mod media_session;
 
 pub use media_info::MediaInfo;
-pub use media_status::MediaStatus;
+pub use playback_state::PlaybackState;

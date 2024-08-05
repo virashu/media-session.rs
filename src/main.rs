@@ -4,7 +4,7 @@ use std::cmp::max;
 use std::time::Duration;
 
 use media_session::media_info::MediaInfo;
-use media_session::player::Player;
+use media_session::media_session::MediaSession;
 
 fn human_time(microsecs: i64) -> String {
     let secs = microsecs / 1_000_000;
@@ -54,7 +54,7 @@ fn update(info: MediaInfo) {
 }
 
 async fn start() {
-    let mut player = Player::new().await;
+    let mut player = MediaSession::new().await;
     
     player.set_callback(update).await;
     player.create_session().await;
