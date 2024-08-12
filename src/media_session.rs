@@ -3,6 +3,7 @@ use std::fs;
 use std::io::Error;
 use std::path::Path;
 
+use base64::{display::Base64Display, engine::general_purpose::STANDARD};
 use futures::executor::block_on;
 use windows::Foundation::TypedEventHandler;
 use windows::Media::Control::{
@@ -206,7 +207,10 @@ impl MediaSession {
 
             let ref_ = props.Thumbnail().unwrap();
             let thumb = stream_ref_to_bytes(ref_).await;
-            self.media_info.cover_raw = thumb;
+            self.media_info.cover_raw = thumb.clone();
+
+            let b64 = Base64Display::new(&thumb, &STANDARD).to_string();
+            self.media_info.cover_b64 = b64;
 
             self.update_callback();
         }
