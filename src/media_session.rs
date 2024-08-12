@@ -1,8 +1,9 @@
-use futures::executor::block_on;
-
 use std::cmp::min;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::fs;
+use std::io::Error;
+use std::path::Path;
 
+use futures::executor::block_on;
 use windows::Foundation::TypedEventHandler;
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as WRT_MediaSession,
@@ -12,45 +13,74 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
     GlobalSystemMediaTransportControlsSessionTimelineProperties as TimelineProperties,
 };
+use windows::Storage::Streams::{
+    Buffer as WRT_Buffer, DataReader as WRT_DataReader,
+    IRandomAccessStreamReference as WRT_IStreamRef,
+    IRandomAccessStreamWithContentType as WRT_IStream, InputStreamOptions,
+};
 
-use crate::media_info::MediaInfo;
-use crate::playback_state::PlaybackState;
-use crate::media_info::MediaInfoInternal;
+use crate::utils::{micros_since_epoch, nt_to_unix};
+use crate::{MediaInfo, PlaybackState, PositionInfo};
 
-/// Get UNIX time in microseconds
-pub fn micros_since_epoch() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+async fn stream_ref_to_bytes(stream_ref: WRT_IStreamRef) -> Vec<u8> {
+    let readable_stream: WRT_IStream = stream_ref.OpenReadAsync().unwrap().await.unwrap();
+    let read_size = readable_stream.Size().unwrap() as u32;
+    let buffer: WRT_Buffer = WRT_Buffer::Create(read_size).unwrap();
+
+    let ib = readable_stream
+        .ReadAsync(&buffer, read_size, InputStreamOptions::ReadAhead)
         .unwrap()
-        .as_micros() as i64
-}
+        .await
+        .unwrap();
 
-/// Convert Windows NT time to UNIX time
-pub fn nt_to_unix(time: i64) -> i64 {
-    let microsec_diff = 11_644_473_600_000_000;
-    // let sec_diff = 11_644_471_817;
-    time - microsec_diff
+    let reader: WRT_DataReader = WRT_DataReader::FromBuffer(&ib).unwrap();
+    let len = ib.Length().unwrap() as usize;
+    let mut rv: Vec<u8> = vec![0; len];
+    let res: &mut [u8] = rv.as_mut_slice();
+
+    reader.ReadBytes(res).unwrap();
+
+    rv
 }
 
 #[derive(Clone, Debug)]
 pub struct MediaSession {
     callback: Option<fn(MediaInfo)>,
     manager: MediaManager,
-    media_info: MediaInfoInternal,
+    media_info: MediaInfo,
+    pos_info: PositionInfo,
     session: Option<WRT_MediaSession>,
 }
 
 impl MediaSession {
     pub async fn new() -> Self {
-        Self {
+        let mut p = Self {
             callback: None,
             manager: MediaManager::RequestAsync().unwrap().await.unwrap(),
-            media_info: MediaInfoInternal::new(),
+            media_info: MediaInfo::new(),
+            pos_info: PositionInfo::new(),
             session: None,
-        }
+        };
+
+        p.init().await;
+
+        p
     }
 
-    pub async fn set_callback(&mut self, callback: fn(MediaInfo)) {
+    pub async fn init(&mut self) {
+        self.create_session().await;
+        self.manager
+            .SessionsChanged(&TypedEventHandler::new({
+                let mut player = self.clone();
+                move |_, _| {
+                    block_on(player.create_session());
+                    Ok(())
+                }
+            }))
+            .unwrap();
+    }
+
+    pub fn set_callback(&mut self, callback: fn(MediaInfo)) {
         self.callback = Some(callback);
     }
 
@@ -59,13 +89,12 @@ impl MediaSession {
 
         if let Ok(session) = session {
             self.session = Some(session);
-            self.setup_listeners();
+            self.setup_session_listeners();
+            self.full_update().await;
         }
-
-        self.update().await;
     }
 
-    fn setup_listeners(&mut self) {
+    fn setup_session_listeners(&mut self) {
         if let Some(session) = &self.session {
             let _ = session.PlaybackInfoChanged(&TypedEventHandler::new({
                 let mut player = self.clone();
@@ -95,68 +124,71 @@ impl MediaSession {
 
     pub fn update_callback(&self) {
         if let Some(callback) = &self.callback {
-            callback(self.media_info.info.clone());
+            callback(self.media_info.clone());
         }
     }
 
-    #[allow(dead_code)] // For external use
     pub async fn get_session(&self) -> Option<WRT_MediaSession> {
         self.session.clone()
     }
 
     pub async fn update(&mut self) {
         if self.session.is_some() {
-            self.update_media_properties().await;
-            self.update_playback_info().await;
-            self.update_timeline_properties().await;
             self.update_position().await;
         }
     }
 
-    async fn update_position(&mut self) {
-        match PlaybackState::from_str(self.media_info.info.state.as_ref()) {
-            PlaybackState::Stopped => self.media_info.info.position = 0,
-            PlaybackState::Paused => self.media_info.info.position = self.media_info.pos_raw,
-            PlaybackState::Playing => {
-                self.media_info.info.position = self.media_info.pos_raw
-                    + (micros_since_epoch() - self.media_info.pos_last_update) // * playback_rate
-            }
-        }
+    async fn full_update(&mut self) {
+        self.update_media_properties().await;
+        self.update_playback_info().await;
+        self.update_timeline_properties().await;
+
+        self.update().await;
     }
 
-    #[allow(dead_code)] // For external use
-    pub async fn get_info(self) -> MediaInfo {
-        let mut info = self.media_info.info.clone();
-        let wrapper = self.media_info;
+    fn update_position_for_mut(info: &mut MediaInfo, pos_info: PositionInfo) {
+        let position: i64;
 
-        match PlaybackState::from_str(info.state.as_ref()) {
-            PlaybackState::Stopped => info.position = 0,
-            PlaybackState::Paused => info.position = wrapper.pos_raw,
+        position = match PlaybackState::from_str(info.state.as_ref()) {
+            PlaybackState::Stopped => 0,
+            PlaybackState::Paused => pos_info.pos_raw,
             PlaybackState::Playing => {
-                let update_delta = micros_since_epoch() - wrapper.pos_last_update;
-                let track_delta = update_delta as f64 * info.playback_rate;
-                let position = min(info.duration, wrapper.pos_raw + track_delta.round() as i64);
-                info.position = position;
+                let update_delta = micros_since_epoch() - pos_info.pos_last_update;
+                let track_delta = update_delta as f64 * pos_info.playback_rate;
+                min(info.duration, pos_info.pos_raw + track_delta.round() as i64)
             }
-        }
+        };
 
-        info
+        info.position = position;
+    }
+
+    async fn update_position(&mut self) {
+        let info_wrapper = &mut self.media_info;
+        Self::update_position_for_mut(info_wrapper, self.pos_info.clone());
+
+        self.update_callback();
+    }
+
+    pub async fn get_info(self) -> MediaInfo {
+        let mut info_wrapper = self.media_info.clone();
+
+        Self::update_position_for_mut(&mut info_wrapper, self.pos_info.clone());
+
+        info_wrapper.clone()
     }
 
     async fn update_playback_info(&mut self) {
         if let Some(session) = &self.session {
             let props: PlaybackInfo = session.GetPlaybackInfo().unwrap();
 
-            self.media_info.info.is_playing = props.PlaybackStatus().unwrap() == PlaybackStatus::Playing;
-
-            self.media_info.info.state = match props.PlaybackStatus().unwrap() {
+            self.media_info.state = match props.PlaybackStatus().unwrap() {
                 PlaybackStatus::Playing => PlaybackState::Playing.into(),
                 PlaybackStatus::Paused => PlaybackState::Paused.into(),
                 PlaybackStatus::Stopped => PlaybackState::Stopped.into(),
 
                 _ => PlaybackState::Stopped.into(),
             };
-            self.media_info.info.playback_rate = props.PlaybackRate().unwrap().Value().unwrap();
+            self.pos_info.playback_rate = props.PlaybackRate().unwrap().Value().unwrap();
 
             self.update_callback();
         }
@@ -167,13 +199,21 @@ impl MediaSession {
             let props: MediaProperties =
                 session.TryGetMediaPropertiesAsync().unwrap().await.unwrap();
 
-            self.media_info.info.title = props.Title().unwrap().to_string();
-            self.media_info.info.artist = props.Artist().unwrap().to_string();
-            self.media_info.info.album_title = props.AlbumTitle().unwrap().to_string();
-            self.media_info.info.album_artist = props.AlbumArtist().unwrap().to_string();
+            self.media_info.title = props.Title().unwrap().to_string();
+            self.media_info.artist = props.Artist().unwrap().to_string();
+            self.media_info.album_title = props.AlbumTitle().unwrap().to_string();
+            self.media_info.album_artist = props.AlbumArtist().unwrap().to_string();
+
+            let ref_ = props.Thumbnail().unwrap();
+            let thumb = stream_ref_to_bytes(ref_).await;
+            self.media_info.cover_raw = thumb;
 
             self.update_callback();
         }
+    }
+
+    pub fn write_thumbnail(self, path: &Path) -> Result<(), Error> {
+        fs::write(path, self.media_info.cover_raw)
     }
 
     async fn update_timeline_properties(&mut self) {
@@ -182,11 +222,11 @@ impl MediaSession {
 
             // Windows' value is in seconds * 10^-7 (100 nanoseconds)
             // Mapping to micros (10^-6)
-            self.media_info.info.duration = props.EndTime().unwrap().Duration / 10;
-            self.media_info.pos_raw = props.Position().unwrap().Duration / 10;
+            self.media_info.duration = props.EndTime().unwrap().Duration / 10;
+            self.pos_info.pos_raw = props.Position().unwrap().Duration / 10;
 
             // NT to UNIX in micros
-            self.media_info.pos_last_update =
+            self.pos_info.pos_last_update =
                 nt_to_unix(props.LastUpdatedTime().unwrap().UniversalTime / 10);
 
             self.update_callback();

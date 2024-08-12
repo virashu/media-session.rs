@@ -2,16 +2,18 @@ use futures::executor::block_on;
 
 use std::cmp::max;
 use std::time::Duration;
+use std::io::Write;
 
-use media_session::media_info::MediaInfo;
-use media_session::media_session::MediaSession;
+use media_session::MediaInfo;
+use media_session::MediaSession;
 
 fn human_time(microsecs: i64) -> String {
     let secs = microsecs / 1_000_000;
 
-    (secs / 60).to_string() + ":" + &format!("{:02}", secs % 60)
+    format!("{}:{:02}", secs / 60, secs % 60)
 }
 
+#[allow(dead_code)]
 fn progress_bar_fira(pos_percent: usize) -> String {
     let center = "".repeat(max(pos_percent as i64 - 2, 0) as usize)
         + &"".repeat(max(100 - pos_percent as i64 - 2, 0) as usize);
@@ -22,6 +24,7 @@ fn progress_bar_fira(pos_percent: usize) -> String {
     format!("{}{}{}", start, center, end)
 }
 
+#[allow(dead_code)]
 fn progress_bar_ascii(pos_percent: usize) -> String {
     let center = "=".repeat(pos_percent) + &" ".repeat(100 - pos_percent);
 
@@ -39,25 +42,21 @@ fn update(info: MediaInfo) {
     let pos_str = human_time(info.position);
     let dur_str = human_time(info.duration);
 
-    print!("\x1b[?25l\x1b[2J\x1b[1;1H");
-
+    print!("\x1b[2J\x1b[H"); /* fast clear */
     print!(
-        "\
-        \t\x1b[1;32m{}\x1b[22;0m\
-        \n\t\x1b[3;2mby \x1b[32;22m{}\x1b[0m\x1b[23m\
-        \n\n {} {} {}
+        "       \x1b[1;32m{}\x1b[22;0m\
+        \n       \x1b[3;2mby \x1b[32;22m{}\x1b[0m\x1b[23m\
+        \n\n {:>5} {} {:>5}
         ",
         info.title, info.artist, pos_str, progress_bar, dur_str,
     );
-
-    print!("\x1b[?25h");
+    std::io::stdout().flush().unwrap();
 }
 
 async fn start() {
     let mut player = MediaSession::new().await;
-    
-    player.set_callback(update).await;
-    player.create_session().await;
+
+    player.set_callback(update);
 
     loop {
         player.update().await;
@@ -67,5 +66,7 @@ async fn start() {
 }
 
 fn main() {
+    print!("\x1b[?25l");
     block_on(start());
+    print!("\x1b[?25h");
 }
