@@ -1,8 +1,8 @@
 use futures::executor::block_on;
 
 use std::cmp::max;
+use std::io::{stdout, Write};
 use std::time::Duration;
-use std::io::Write;
 
 use media_session::MediaInfo;
 use media_session::MediaSession;
@@ -37,20 +37,28 @@ fn progress_bar_ascii(pos_percent: usize) -> String {
 fn update(info: MediaInfo) {
     let pos_percent: usize = (info.position as f64 / info.duration as f64 * 100.0) as usize;
 
-    let progress_bar = progress_bar_fira(pos_percent); /* for Fira Code */
-    // let progress_bar = progress_bar_ascii(pos_percent); /* for other fonts */
+    // let progress_bar = progress_bar_fira(pos_percent); /* for Fira Code */
+    let progress_bar = progress_bar_ascii(pos_percent); /* for other fonts */
     let pos_str = human_time(info.position);
     let dur_str = human_time(info.duration);
 
-    print!("\x1b[2J\x1b[H"); /* fast clear */
-    print!(
+    let title = info.title;
+    let artist = info.artist;
+
+    let mut lock = stdout().lock();
+
+    write!(lock, "\x1b[2J\x1b[H").unwrap(); /* fast clear */
+    write!(
+        lock,
         "       \x1b[1;32m{}\x1b[22;0m\
         \n       \x1b[3;2mby \x1b[32;22m{}\x1b[0m\x1b[23m\
         \n\n {:>5} {} {:>5}
         ",
-        info.title, info.artist, pos_str, progress_bar, dur_str,
-    );
-    std::io::stdout().flush().unwrap();
+        title, artist, pos_str, progress_bar, dur_str,
+    )
+    .unwrap();
+
+    lock.flush().unwrap();
 }
 
 async fn start() {
@@ -61,7 +69,7 @@ async fn start() {
     loop {
         player.update().await;
 
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 

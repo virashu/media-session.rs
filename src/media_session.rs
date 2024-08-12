@@ -139,7 +139,7 @@ impl MediaSession {
         }
     }
 
-    async fn full_update(&mut self) {
+    pub async fn full_update(&mut self) {
         self.update_media_properties().await;
         self.update_playback_info().await;
         self.update_timeline_properties().await;
