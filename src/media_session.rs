@@ -267,10 +267,18 @@ impl MediaSession {
         Self::update_position_for_mut(info_wrapper, self.pos_info.clone());
     }
 
-    pub async fn get_info(self) -> MediaInfo {
+    pub fn get_info(self) -> MediaInfo {
         let mut info_wrapper = self.media_info.clone();
 
         Self::update_position_for_mut(&mut info_wrapper, self.pos_info.clone());
+
+        info_wrapper.clone()
+    }
+
+    pub fn get_info_from(ms: &MediaSession) -> MediaInfo {
+        let mut info_wrapper = ms.media_info.clone();
+
+        Self::update_position_for_mut(&mut info_wrapper, ms.pos_info.clone());
 
         info_wrapper.clone()
     }
