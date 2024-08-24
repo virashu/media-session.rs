@@ -6,5 +6,5 @@ mod utils;
 
 pub use error::Error;
 pub use media_info::{MediaInfo, PositionInfo};
-pub use media_session::MediaSession;
+pub use media_session::{MediaSession, MediaSessionControls};
 pub use playback_state::PlaybackState;
