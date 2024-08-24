@@ -358,16 +358,16 @@ impl MediaSession {
 }
 
 pub trait MediaSessionControls {
-    async fn toggle_pause(&self) -> Result<(), WRT_Error>;
-    async fn pause(&self) -> Result<(), WRT_Error>;
-    async fn play(&self) -> Result<(), WRT_Error>;
-    async fn stop(&self) -> Result<(), WRT_Error>;
-    async fn next(&self) -> Result<(), WRT_Error>;
-    async fn prev(&self) -> Result<(), WRT_Error>;
+    async fn toggle_pause(self: &Self) -> Result<(), WRT_Error>;
+    async fn pause(self: &Self) -> Result<(), WRT_Error>;
+    async fn play(self: &Self) -> Result<(), WRT_Error>;
+    async fn stop(self: &Self) -> Result<(), WRT_Error>;
+    async fn next(self: &Self) -> Result<(), WRT_Error>;
+    async fn prev(self: &Self) -> Result<(), WRT_Error>;
 }
 
 impl MediaSessionControls for MediaSession {
-    async fn pause(&self) -> Result<(), WRT_Error> {
+    async fn pause(self: &Self) -> Result<(), WRT_Error> {
         if let Some(session) = &self.session {
             session.TryPauseAsync()?.await?;
         }
@@ -375,7 +375,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn play(&self) -> Result<(), WRT_Error> {
+    async fn play(self: &Self) -> Result<(), WRT_Error> {
         if let Some(session) = &self.session {
             session.TryPlayAsync()?.await?;
         }
@@ -383,7 +383,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn toggle_pause(&self) -> Result<(), WRT_Error> {
+    async fn toggle_pause(self: &Self) -> Result<(), WRT_Error> {
         if let Some(session) = &self.session {
             session.TryTogglePlayPauseAsync()?.await?;
         }
@@ -391,7 +391,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn stop(&self) -> Result<(), WRT_Error> {
+    async fn stop(self: &Self) -> Result<(), WRT_Error> {
         if let Some(session) = &self.session {
             session.TryStopAsync()?.await?;
         }
@@ -399,7 +399,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn next(&self) -> Result<(), WRT_Error>{
+    async fn next(self: &Self) -> Result<(), WRT_Error>{
         if let Some(session) = &self.session {
             session.TrySkipNextAsync()?.await?;
         }
@@ -407,7 +407,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn prev(&self) -> Result<(), WRT_Error>{
+    async fn prev(self: &Self) -> Result<(), WRT_Error>{
         if let Some(session) = &self.session {
             session.TrySkipPreviousAsync()?.await?;
         }
