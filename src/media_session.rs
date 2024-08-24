@@ -1,5 +1,6 @@
 use log;
 use std::cmp::min;
+use std::fmt::Debug;
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -74,9 +75,8 @@ struct EventTokens {
     timeline_properties_changed_token: EventRegistrationToken,
 }
 
-#[derive(Debug)]
 pub struct MediaSession {
-    callback: Option<fn(MediaInfo)>,
+    callback: Option<Box<dyn Fn(MediaInfo)>>,
     manager: MediaManager,
     media_info: MediaInfo,
     pos_info: PositionInfo,
@@ -125,8 +125,8 @@ impl MediaSession {
         self.create_session().await;
     }
 
-    pub fn set_callback(&mut self, callback: fn(MediaInfo)) {
-        self.callback = Some(callback);
+    pub fn set_callback<F>(&mut self, callback: F) where F: Fn(MediaInfo) + 'static {
+        self.callback = Some(Box::new(callback));
     }
 
     async fn create_session(&mut self) {
