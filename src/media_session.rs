@@ -113,15 +113,18 @@ impl MediaSession {
     }
 
     async fn init(&mut self) {
+        let session_changed_handler = TypedEventHandler::new({
+            let s = self.manager_event_channel.sender.clone();
+            move |_, _| {
+                s.send(MediaManagerEvent::SessionChanged).unwrap();
+                Ok(())
+            }
+        });
+
         self.manager
-            .SessionsChanged(&TypedEventHandler::new({
-                let s = self.manager_event_channel.sender.clone();
-                move |_, _| {
-                    s.send(MediaManagerEvent::SessionChanged).unwrap();
-                    Ok(())
-                }
-            }))
+            .CurrentSessionChanged(&session_changed_handler)
             .unwrap();
+
         self.create_session().await;
     }
 
