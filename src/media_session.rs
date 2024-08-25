@@ -125,7 +125,10 @@ impl MediaSession {
         self.create_session().await;
     }
 
-    pub fn set_callback<F>(&mut self, callback: F) where F: Fn(MediaInfo) + 'static {
+    pub fn set_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(MediaInfo) + 'static,
+    {
         self.callback = Some(Box::new(callback));
     }
 
@@ -213,28 +216,41 @@ impl MediaSession {
         self.session.clone()
     }
 
-    pub async fn update(&mut self) {
-        if let Ok(event) = self.manager_event_channel.receiver.try_recv() {
+    async fn handle_manager_events(&mut self) {
+        while let Ok(event) = self.manager_event_channel.receiver.try_recv() {
+            log::debug!("Got event: {:?}", event);
             match event {
                 MediaManagerEvent::SessionChanged => self.create_session().await,
             }
         }
+    }
 
-        if self.session.is_some() {
-            while let Ok(event) = self.session_event_channel.receiver.try_recv() {
-                log::debug!("Got event: {:?}", event);
-                match event {
-                    MediaSessionEvent::MediaPropertiesChanged => {
-                        self.update_media_properties().await.unwrap()
-                    }
-                    MediaSessionEvent::PlaybackInfoChanged => {
-                        self.update_playback_info().await.unwrap()
-                    }
-                    MediaSessionEvent::TimelinePropertiesChanged => {
-                        self.update_timeline_properties().await.unwrap()
-                    }
+    async fn handle_session_events(&mut self) {
+        if self.session.is_none() {
+            return;
+        }
+
+        while let Ok(event) = self.session_event_channel.receiver.try_recv() {
+            log::debug!("Got event: {:?}", event);
+            match event {
+                MediaSessionEvent::MediaPropertiesChanged => {
+                    self.update_media_properties().await.unwrap()
+                }
+                MediaSessionEvent::PlaybackInfoChanged => {
+                    self.update_playback_info().await.unwrap()
+                }
+                MediaSessionEvent::TimelinePropertiesChanged => {
+                    self.update_timeline_properties().await.unwrap()
                 }
             }
+        }
+    }
+
+    pub async fn update(&mut self) {
+        self.handle_manager_events().await;
+
+        if self.session.is_some() {
+            self.handle_session_events().await;
             self.update_position().await;
             self.update_callback();
         }
@@ -399,7 +415,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn next(&self) -> Result<(), WRT_Error>{
+    async fn next(&self) -> Result<(), WRT_Error> {
         if let Some(session) = &self.session {
             session.TrySkipNextAsync()?.await?;
         }
@@ -407,7 +423,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn prev(&self) -> Result<(), WRT_Error>{
+    async fn prev(&self) -> Result<(), WRT_Error> {
         if let Some(session) = &self.session {
             session.TrySkipPreviousAsync()?.await?;
         }
