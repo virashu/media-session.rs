@@ -26,25 +26,23 @@ use crate::utils::{micros_since_epoch, nt_to_unix};
 use crate::Error;
 use crate::{MediaInfo, PlaybackState, PositionInfo};
 
-async fn stream_ref_to_bytes(stream_ref: WRT_IStreamRef) -> Vec<u8> {
-    let readable_stream: WRT_IStream = stream_ref.OpenReadAsync().unwrap().await.unwrap();
-    let read_size = readable_stream.Size().unwrap() as u32;
-    let buffer: WRT_Buffer = WRT_Buffer::Create(read_size).unwrap();
+async fn stream_ref_to_bytes(stream_ref: WRT_IStreamRef) -> Result<Vec<u8>, WRT_Error> {
+    let readable_stream: WRT_IStream = stream_ref.OpenReadAsync()?.await?;
+    let read_size = readable_stream.Size()? as u32;
+    let buffer: WRT_Buffer = WRT_Buffer::Create(read_size)?;
 
     let ib = readable_stream
-        .ReadAsync(&buffer, read_size, InputStreamOptions::ReadAhead)
-        .unwrap()
-        .await
-        .unwrap();
+        .ReadAsync(&buffer, read_size, InputStreamOptions::ReadAhead)?
+        .await?;
 
-    let reader: WRT_DataReader = WRT_DataReader::FromBuffer(&ib).unwrap();
-    let len = ib.Length().unwrap() as usize;
+    let reader: WRT_DataReader = WRT_DataReader::FromBuffer(&ib)?;
+    let len = ib.Length()? as usize;
     let mut rv: Vec<u8> = vec![0; len];
     let res: &mut [u8] = rv.as_mut_slice();
 
-    reader.ReadBytes(res).unwrap();
+    reader.ReadBytes(res)?;
 
-    rv
+    Ok(rv)
 }
 
 #[derive(Debug)]
@@ -286,18 +284,10 @@ impl MediaSession {
         Self::update_position_for_mut(info_wrapper, self.pos_info.clone());
     }
 
-    pub fn get_info(self) -> MediaInfo {
+    pub fn get_info(&self) -> MediaInfo {
         let mut info_wrapper = self.media_info.clone();
 
         Self::update_position_for_mut(&mut info_wrapper, self.pos_info.clone());
-
-        info_wrapper.clone()
-    }
-
-    pub fn get_info_from(ms: &MediaSession) -> MediaInfo {
-        let mut info_wrapper = ms.media_info.clone();
-
-        Self::update_position_for_mut(&mut info_wrapper, ms.pos_info.clone());
 
         info_wrapper.clone()
     }
@@ -309,6 +299,7 @@ impl MediaSession {
             Self::update_playback_info_mut(&mut self.media_info, &mut self.pos_info, session)
                 .await?;
         }
+
         Ok(())
     }
 
@@ -337,13 +328,13 @@ impl MediaSession {
         if let Some(session) = &self.session {
             let props: MediaProperties = session.TryGetMediaPropertiesAsync()?.await?;
 
-            self.media_info.title = props.Title().unwrap().to_string();
-            self.media_info.artist = props.Artist().unwrap().to_string();
-            self.media_info.album_title = props.AlbumTitle().unwrap().to_string();
-            self.media_info.album_artist = props.AlbumArtist().unwrap().to_string();
+            self.media_info.title = props.Title()?.to_string();
+            self.media_info.artist = props.Artist()?.to_string();
+            self.media_info.album_title = props.AlbumTitle()?.to_string();
+            self.media_info.album_artist = props.AlbumArtist()?.to_string();
 
-            let ref_ = props.Thumbnail().unwrap();
-            let thumb = stream_ref_to_bytes(ref_).await;
+            let ref_ = props.Thumbnail()?;
+            let thumb = stream_ref_to_bytes(ref_).await?;
             self.media_info.cover_raw = thumb.clone();
 
             let b64 = Base64Display::new(&thumb, &STANDARD).to_string();
