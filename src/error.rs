@@ -18,3 +18,12 @@ impl std::fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[cfg(windows)]
+impl From<windows::core::Error> for Error {
+    fn from(e: windows::core::Error) -> Self {
+        Self {
+            message: e.message().to_string(),
+        }
+    }
+}
