@@ -1,7 +1,5 @@
 use std::cmp::min;
 use std::fmt::Debug;
-use std::fs;
-use std::path::Path;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 use base64::{display::Base64Display, engine::general_purpose::STANDARD};
@@ -23,7 +21,7 @@ use windows::Storage::Streams::{
 };
 
 use crate::error::Error;
-use crate::media_session_controls::MediaSessionControls;
+use crate::traits::MediaSessionControls;
 use crate::utils::{micros_since_epoch, nt_to_unix};
 use crate::{MediaInfo, PlaybackState, PositionInfo};
 
@@ -208,14 +206,10 @@ impl MediaSession {
         }
     }
 
-    pub fn update_callback(&self) {
+    fn update_callback(&self) {
         if let Some(callback) = &self.callback {
             callback(self.media_info.clone());
         }
-    }
-
-    pub async fn get_session(&self) -> Option<WRT_MediaSession> {
-        self.session.clone()
     }
 
     async fn handle_manager_events(&mut self) {
@@ -258,7 +252,7 @@ impl MediaSession {
         }
     }
 
-    pub async fn full_update(&mut self) {
+    async fn full_update(&mut self) {
         self.update_media_properties().await.unwrap();
         self.update_playback_info().await.unwrap();
         self.update_timeline_properties().await.unwrap();
@@ -345,10 +339,6 @@ impl MediaSession {
         Ok(())
     }
 
-    fn write_thumbnail(self, path: &Path) -> Result<(), std::io::Error> {
-        fs::write(path, self.media_info.cover_raw.clone())
-    }
-
     async fn update_timeline_properties(&mut self) -> Result<(), WRT_Error> {
         log::debug!("Updating timeline properties");
 
@@ -369,7 +359,7 @@ impl MediaSession {
 }
 
 impl MediaSessionControls for MediaSession {
-    async fn pause(&self) -> Result<(), Error> {
+    async fn pause(&self) -> crate::Result<()> {
         if let Some(session) = &self.session {
             session.TryPauseAsync()?.await?;
         }
@@ -377,7 +367,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn play(&self) -> Result<(), Error> {
+    async fn play(&self) -> crate::Result<()> {
         if let Some(session) = &self.session {
             session.TryPlayAsync()?.await?;
         }
@@ -385,7 +375,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn toggle_pause(&self) -> Result<(), Error> {
+    async fn toggle_pause(&self) -> crate::Result<()> {
         if let Some(session) = &self.session {
             session.TryTogglePlayPauseAsync()?.await?;
         }
@@ -393,7 +383,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn stop(&self) -> Result<(), Error> {
+    async fn stop(&self) -> crate::Result<()> {
         if let Some(session) = &self.session {
             session.TryStopAsync()?.await?;
         }
@@ -401,7 +391,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn next(&self) -> Result<(), Error> {
+    async fn next(&self) -> crate::Result<()> {
         if let Some(session) = &self.session {
             session.TrySkipNextAsync()?.await?;
         }
@@ -409,7 +399,7 @@ impl MediaSessionControls for MediaSession {
         Ok(())
     }
 
-    async fn prev(&self) -> Result<(), Error> {
+    async fn prev(&self) -> crate::Result<()> {
         if let Some(session) = &self.session {
             session.TrySkipPreviousAsync()?.await?;
         }
