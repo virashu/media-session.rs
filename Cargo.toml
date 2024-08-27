@@ -17,3 +17,6 @@ windows = { version = "0.56.0", features = [
   "implement",
   "Foundation",
 ] }
+
+[target.'cfg(unix)'.dependencies]
+dbus = { version = "0.9.7", features = ["futures"] }
