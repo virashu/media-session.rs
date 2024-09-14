@@ -4,7 +4,6 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 
 use base64::{display::Base64Display, engine::general_purpose::STANDARD};
 use log;
-use windows::core::Error as WRT_Error;
 use windows::Foundation::{EventRegistrationToken, TypedEventHandler};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as WRT_MediaSession,
@@ -25,7 +24,7 @@ use crate::traits::MediaSessionControls;
 use crate::utils::{micros_since_epoch, nt_to_unix};
 use crate::{MediaInfo, PlaybackState, PositionInfo};
 
-async fn stream_ref_to_bytes(stream_ref: WRT_IStreamRef) -> Result<Vec<u8>, WRT_Error> {
+async fn stream_ref_to_bytes(stream_ref: WRT_IStreamRef) -> crate::Result<Vec<u8>> {
     let readable_stream: WRT_IStream = stream_ref.OpenReadAsync()?.await?;
     let read_size = readable_stream.Size()? as u32;
     let buffer: WRT_Buffer = WRT_Buffer::Create(read_size)?;
@@ -287,7 +286,7 @@ impl MediaSession {
         info_wrapper.clone()
     }
 
-    async fn update_playback_info(&mut self) -> Result<(), WRT_Error> {
+    async fn update_playback_info(&mut self) -> crate::Result<()> {
         log::debug!("Updating playback info");
 
         if let Some(session) = &self.session {
@@ -302,7 +301,7 @@ impl MediaSession {
         media_info: &mut MediaInfo,
         pos_info: &mut PositionInfo,
         session: &WRT_MediaSession,
-    ) -> Result<(), WRT_Error> {
+    ) -> crate::Result<()> {
         let props: PlaybackInfo = session.GetPlaybackInfo()?;
 
         media_info.state = match props.PlaybackStatus()? {
@@ -317,7 +316,7 @@ impl MediaSession {
         Ok(())
     }
 
-    async fn update_media_properties(&mut self) -> Result<(), WRT_Error> {
+    async fn update_media_properties(&mut self) -> crate::Result<()> {
         log::debug!("Updating media properties");
 
         if let Some(session) = &self.session {
@@ -328,18 +327,24 @@ impl MediaSession {
             self.media_info.album_title = props.AlbumTitle()?.to_string();
             self.media_info.album_artist = props.AlbumArtist()?.to_string();
 
-            let ref_ = props.Thumbnail()?;
-            let thumb = stream_ref_to_bytes(ref_).await?;
-            self.media_info.cover_raw = thumb.clone();
+            match props.Thumbnail().or(props.Thumbnail()) {
+                Ok(ref_) => {
+                    let thumb = stream_ref_to_bytes(ref_).await?;
+                    self.media_info.cover_raw = thumb.clone();
 
-            let b64 = Base64Display::new(&thumb, &STANDARD).to_string();
-            self.media_info.cover_b64 = b64;
+                    let b64 = Base64Display::new(&thumb, &STANDARD).to_string();
+                    self.media_info.cover_b64 = b64;
+                }
+                Err(_) => {
+                    log::error!("Failed to get thumbnail");
+                }
+            }
         }
 
         Ok(())
     }
 
-    async fn update_timeline_properties(&mut self) -> Result<(), WRT_Error> {
+    async fn update_timeline_properties(&mut self) -> crate::Result<()> {
         log::debug!("Updating timeline properties");
 
         if let Some(session) = &self.session {
