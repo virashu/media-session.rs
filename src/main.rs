@@ -1,12 +1,16 @@
 use futures::executor::block_on;
 
 use std::cmp::max;
-use std::io::{stdout, Write};
 use std::time::Duration;
 
-use media_session::MediaInfo;
 use media_session::MediaSession;
 
+#[cfg(feature = "cli")]
+use media_session::MediaInfo;
+#[cfg(feature = "cli")]
+use std::io::{stdout, Write};
+
+#[cfg(feature = "cli")]
 fn human_time(microsecs: i64) -> String {
     let secs = microsecs / 1_000_000;
 
@@ -34,6 +38,7 @@ fn progress_bar_ascii(pos_percent: usize) -> String {
     format!("{}{}{}", start, center, end)
 }
 
+#[cfg(feature = "cli")]
 fn update(info: MediaInfo) {
     let pos_percent: usize = (info.position as f64 / info.duration as f64 * 100.0) as usize;
 
@@ -62,8 +67,14 @@ fn update(info: MediaInfo) {
 }
 
 async fn start() {
+    #[cfg(feature = "colog")]
+    colog::default_builder()
+        .filter(None, log::LevelFilter::Debug)
+        .init();
+
     let mut player = MediaSession::new().await;
 
+    #[cfg(feature = "cli")]
     player.set_callback(update);
 
     loop {

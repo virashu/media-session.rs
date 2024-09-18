@@ -213,7 +213,7 @@ impl MediaSession {
 
     async fn handle_manager_events(&mut self) {
         while let Ok(event) = self.manager_event_channel.receiver.try_recv() {
-            log::debug!("Got event: {:?}", event);
+            log::info!("Got event: {:?}", event);
             match event {
                 MediaManagerEvent::SessionChanged => self.create_session().await,
             }
@@ -226,7 +226,7 @@ impl MediaSession {
         }
 
         while let Ok(event) = self.session_event_channel.receiver.try_recv() {
-            log::debug!("Got event: {:?}", event);
+            log::info!("Got event: {:?}", event);
             match event {
                 MediaSessionEvent::MediaPropertiesChanged => {
                     self.update_media_properties().await.unwrap()
@@ -252,9 +252,18 @@ impl MediaSession {
     }
 
     async fn full_update(&mut self) {
-        self.update_media_properties().await.unwrap();
-        self.update_playback_info().await.unwrap();
-        self.update_timeline_properties().await.unwrap();
+        _ = self
+            .update_media_properties()
+            .await
+            .inspect_err(|_| log::warn!("Media properties are not accessible"));
+        _ = self
+            .update_playback_info()
+            .await
+            .inspect_err(|_| log::warn!("Playback info is not accessible"));
+        _ = self
+            .update_timeline_properties()
+            .await
+            .inspect_err(|_| log::warn!("Timeline properties are not accessible"));
     }
 
     fn update_position_for_mut(info: &mut MediaInfo, pos_info: PositionInfo) {
