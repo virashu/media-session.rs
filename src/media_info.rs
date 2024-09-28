@@ -69,3 +69,23 @@ impl Into<json::JsonValue> for MediaInfo {
         }
     }
 }
+
+impl Default for MediaInfo {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            artist: String::new(),
+
+            album_title: String::new(),
+            album_artist: String::new(),
+
+            duration: 0,
+            position: 0,
+
+            cover_b64: String::new(),
+            cover_raw: Vec::new(),
+
+            state: PlaybackState::Stopped.into(),
+        }
+    }
+}
