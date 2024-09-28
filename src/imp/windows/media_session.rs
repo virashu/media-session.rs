@@ -23,6 +23,8 @@ impl MediaSession {
         let session_opt = Self::create_session(&Some(manager.clone()));
         let session = Arc::new(Mutex::new(session_opt));
 
+        Self::update_session_async(&session).await;
+
         let mut media_session = Self {
             manager,
             session,
@@ -40,8 +42,13 @@ impl MediaSession {
         let token = self
             .manager
             .CurrentSessionChanged(&TypedEventHandler::new(move |manager, _| {
-                let mut s = session.lock().unwrap();
-                *s = Self::create_session(manager);
+                {
+                    let mut s = session.lock().unwrap();
+                    *s = Self::create_session(manager);
+                }
+                Self::setup_session_listeners(&session);
+                Self::update_session(&session);
+
                 Ok(())
             }))
             .unwrap();
@@ -49,37 +56,41 @@ impl MediaSession {
         self.event_token = Some(token);
     }
 
-    fn setup_session_listeners(&self) {
-        let mut session_opt = self.session.lock().unwrap();
+    fn setup_session_listeners(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
+        let mut session_opt = session_mutex.lock().unwrap();
 
         if let Some(session) = &mut *session_opt {
             let wrt_session = session.get_session();
 
-            let session_clone = Arc::clone(&self.session);
+            let session_clone = Arc::clone(&session_mutex);
             let playback_info_changed_token = wrt_session
                 .PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
                     if let Some(session) = &mut *session_clone.lock().unwrap() {
-                        block_on(session.update_playback_info());
+                        let _ = block_on(session.update_playback_info())
+                            .inspect_err(|e| log::warn!("Failed to update playback info: {e}"));
                     }
                     Ok(())
                 }))
                 .unwrap();
 
-            let session_clone = Arc::clone(&self.session);
+            let session_clone = Arc::clone(&session_mutex);
             let media_properties_changed_token = wrt_session
                 .MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
                     if let Some(session) = &mut *session_clone.lock().unwrap() {
-                        block_on(session.update_media_properties()).;
+                        let _ = block_on(session.update_media_properties())
+                            .inspect_err(|e| log::warn!("Failed to update media properties: {e}"));
                     }
                     Ok(())
                 }))
                 .unwrap();
 
-            let session_clone = Arc::clone(&self.session);
+            let session_clone = Arc::clone(&session_mutex);
             let timeline_properties_changed_token = wrt_session
                 .TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
                     if let Some(session) = &mut *session_clone.lock().unwrap() {
-                        block_on(session.update_timeline_properties());
+                        let _ = block_on(session.update_timeline_properties()).inspect_err(|e| {
+                            log::warn!("Failed to update timeline properties: {e}")
+                        });
                     }
                     Ok(())
                 }))
@@ -93,19 +104,36 @@ impl MediaSession {
         }
     }
 
+    fn update_session(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
+        let mut session = session_mutex.lock().unwrap();
+
+        if let Some(session) = &mut *session {
+            block_on(session.full_update());
+        }
+    }
+
+    async fn update_session_async(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
+        let mut session = session_mutex.lock().unwrap();
+
+        if let Some(session) = &mut *session {
+            session.full_update().await;
+        }
+    }
+
     fn create_session(manager: &Option<WRT_MediaManager>) -> Option<MediaSessionStruct> {
         if let Some(manager) = manager {
             let wrt_session = manager.GetCurrentSession();
 
             if let Ok(wrt_session) = wrt_session {
-                let mut session = MediaSessionStruct::new(wrt_session);
+                log::info!("Found an existing session");
 
-                // init it
+                let session = MediaSessionStruct::new(wrt_session);
 
-                session.init();
+                return Some(session);
             }
         }
 
+        log::info!("No active sessions found");
         None
     }
 

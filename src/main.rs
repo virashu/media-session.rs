@@ -72,13 +72,11 @@ async fn start() {
         .filter(None, log::LevelFilter::Debug)
         .init();
 
-    let mut player = MediaSession::new().await;
-
-    #[cfg(feature = "cli")]
-    player.set_callback(update);
+    let player = MediaSession::new().await;
 
     loop {
-        player.update().await;
+        #[cfg(feature = "cli")]
+        update(player.get_info());
 
         std::thread::sleep(Duration::from_millis(10));
     }

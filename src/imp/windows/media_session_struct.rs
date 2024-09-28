@@ -37,19 +37,15 @@ impl MediaSessionStruct {
         let media_info = MediaInfo::new();
         let pos_info = PositionInfo::new();
 
-        let mut media_session_struct = Self {
+        let media_session_struct = Self {
             media_info,
             pos_info,
             session,
             event_tokens: None,
         };
 
-        media_session_struct.init();
-
         media_session_struct
     }
-
-    pub fn init(&mut self) {}
 
     pub fn get_session(&self) -> WRT_MediaSession {
         self.session.clone()
@@ -59,7 +55,7 @@ impl MediaSessionStruct {
         self.event_tokens = Some(event_tokens);
     }
 
-    pub fn drop_event_tokens(&mut self) {
+    pub fn clear_event_tokens(&mut self) {
         self.event_tokens = None;
     }
 
@@ -75,7 +71,7 @@ impl MediaSessionStruct {
                 .RemoveTimelinePropertiesChanged(tokens.timeline_properties_changed_token)
                 .unwrap();
         }
-        self.event_tokens = None;
+        self.clear_event_tokens();
     }
 
     pub async fn update(&mut self) {
@@ -227,7 +223,7 @@ impl MediaSessionControls for MediaSessionStruct {
 
 impl Drop for MediaSessionStruct {
     fn drop(&mut self) {
-        println!("I'm being dropped!");
+        log::debug!("Session dropped");
         self.drop_event_listeners();
     }
 }
