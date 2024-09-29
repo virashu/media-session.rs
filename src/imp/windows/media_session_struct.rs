@@ -74,9 +74,9 @@ impl MediaSessionStruct {
         self.clear_event_tokens();
     }
 
-    pub async fn update(&mut self) {
-        self.update_position().await;
-    }
+    // async fn update(&mut self) {
+    //     self.update_position().await;
+    // }
 
     pub async fn full_update(&mut self) {
         _ = self
@@ -109,10 +109,10 @@ impl MediaSessionStruct {
         info.position = position;
     }
 
-    async fn update_position(&mut self) {
-        let info_wrapper = &mut self.media_info;
-        Self::update_position_mut(info_wrapper, self.pos_info.clone());
-    }
+    // async fn update_position(&mut self) {
+    //     let info_wrapper = &mut self.media_info;
+    //     Self::update_position_mut(info_wrapper, self.pos_info.clone());
+    // }
 
     pub fn get_info(&self) -> MediaInfo {
         let mut info = self.media_info.clone();

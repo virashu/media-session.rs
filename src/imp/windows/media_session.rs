@@ -1,3 +1,4 @@
+use crate::traits::MediaSessionControls;
 use crate::MediaInfo;
 
 use futures::executor::block_on;
@@ -145,5 +146,50 @@ impl MediaSession {
         }
 
         MediaInfo::default()
+    }
+}
+
+impl MediaSessionControls for MediaSession {
+    async fn pause(&self) -> crate::Result<()> {
+        if let Some(session) = &*self.session.lock().unwrap() {
+            session.pause().await?;
+        }
+
+        Ok(())
+    }
+
+    async fn play(&self) -> crate::Result<()> {
+        if let Some(session) = &*self.session.lock().unwrap() {
+            session.play().await?;
+        }
+        Ok(())
+    }
+
+    async fn toggle_pause(&self) -> crate::Result<()> {
+        if let Some(session) = &*self.session.lock().unwrap() {
+            session.toggle_pause().await?;
+        }
+        Ok(())
+    }
+
+    async fn stop(&self) -> crate::Result<()> {
+        if let Some(session) = &*self.session.lock().unwrap() {
+            session.stop().await?;
+        }
+        Ok(())
+    }
+
+    async fn next(&self) -> crate::Result<()> {
+        if let Some(session) = &*self.session.lock().unwrap() {
+            session.next().await?;
+        }
+        Ok(())
+    }
+
+    async fn prev(&self) -> crate::Result<()> {
+        if let Some(session) = &*self.session.lock().unwrap() {
+            session.prev().await?;
+        }
+        Ok(())
     }
 }
