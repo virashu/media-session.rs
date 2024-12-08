@@ -1,3 +1,5 @@
+use std::{thread, time::Duration};
+
 use futures::executor::block_on;
 use media_session::MediaSession;
 
@@ -9,7 +11,9 @@ async fn start() {
 
     let _player = MediaSession::new().await;
 
-    loop {}
+    loop {
+        thread::sleep(Duration::from_secs(1));
+    }
 }
 
 fn main() {

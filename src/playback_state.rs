@@ -1,21 +1,16 @@
-use core::convert::Into;
+use crate::error::Error;
+use std::str::FromStr;
 
+#[derive(Default)]
 pub enum PlaybackState {
+    #[default]
     Stopped,
     Paused,
     Playing,
 }
 
 impl PlaybackState {
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "stopped" => Self::Stopped,
-            "paused" => Self::Paused,
-            "playing" => Self::Playing,
-            _ => Self::Stopped,
-        }
-    }
-    pub fn from_string(s: String) -> Self {
+    pub fn from_string(s: String) -> Result<Self, Error> {
         Self::from_str(s.as_str())
     }
     pub fn as_str(&self) -> &'static str {
@@ -25,25 +20,42 @@ impl PlaybackState {
             Self::Playing => "playing",
         }
     }
-    pub fn to_string(&self) -> String {
-        self.as_str().to_string()
+}
+
+impl std::fmt::Display for PlaybackState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 
-impl Into<String> for PlaybackState {
-    fn into(self) -> String {
-        self.to_string()
+impl FromStr for PlaybackState {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "stopped" => Ok(Self::Stopped),
+            "paused" => Ok(Self::Paused),
+            "playing" => Ok(Self::Playing),
+            "" => Err(Error::new("cannot parse playback state from empty string")),
+            _ => Err(Error::new("cannot parse playback state")),
+        }
+    }
+}
+
+impl From<PlaybackState> for String {
+    fn from(state: PlaybackState) -> Self {
+        state.to_string()
     }
 }
 
 impl From<String> for PlaybackState {
     fn from(s: String) -> Self {
-        Self::from_string(s)
+        Self::from_string(s).unwrap_or_default()
     }
 }
 
 impl From<&str> for PlaybackState {
     fn from(s: &str) -> Self {
-        Self::from_str(s)
+        Self::from_str(s).unwrap_or_default()
     }
 }

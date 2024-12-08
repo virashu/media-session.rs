@@ -54,18 +54,24 @@ impl PositionInfo {
     }
 }
 
+impl Default for PositionInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(feature = "json")]
-impl Into<json::JsonValue> for MediaInfo {
-    fn into(self) -> json::JsonValue {
+impl From<MediaInfo> for json::JsonValue {
+    fn from(info: MediaInfo) -> Self {
         json::object! {
-            title: self.title,
-            artist: self.artist,
-            album_title: self.album_title,
-            album_artist: self.album_artist,
-            duration: self.duration,
-            position: self.position,
-            cover_b64: self.cover_b64,
-            state: self.state,
+            title: info.title,
+            artist: info.artist,
+            album_title: info.album_title,
+            album_artist: info.album_artist,
+            duration: info.duration,
+            position: info.position,
+            cover_b64: info.cover_b64,
+            state: info.state,
         }
     }
 }

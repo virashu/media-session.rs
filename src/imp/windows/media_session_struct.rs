@@ -37,14 +37,12 @@ impl MediaSessionStruct {
         let media_info = MediaInfo::new();
         let pos_info = PositionInfo::new();
 
-        let media_session_struct = Self {
+        Self {
             media_info,
             pos_info,
             session,
             event_tokens: None,
-        };
-
-        media_session_struct
+        }
     }
 
     pub fn get_session(&self) -> WRT_MediaSession {
@@ -94,10 +92,8 @@ impl MediaSessionStruct {
     }
 
     fn update_position_mut(info: &mut MediaInfo, pos_info: PositionInfo) {
-        let position: i64;
-
-        position = match PlaybackState::from_str(info.state.as_ref()) {
-            PlaybackState::Stopped => 0,
+        let position = match PlaybackState::from(info.state.as_ref()) {
+            PlaybackState::Stopped => 0i64,
             PlaybackState::Paused => pos_info.pos_raw,
             PlaybackState::Playing => {
                 let update_delta = micros_since_epoch() - pos_info.pos_last_update;

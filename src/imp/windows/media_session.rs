@@ -63,7 +63,7 @@ impl MediaSession {
         if let Some(session) = &mut *session_opt {
             let wrt_session = session.get_session();
 
-            let session_clone = Arc::clone(&session_mutex);
+            let session_clone = Arc::clone(session_mutex);
             let playback_info_changed_token = wrt_session
                 .PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
                     if let Some(session) = &mut *session_clone.lock().unwrap() {
@@ -74,7 +74,7 @@ impl MediaSession {
                 }))
                 .unwrap();
 
-            let session_clone = Arc::clone(&session_mutex);
+            let session_clone = Arc::clone(session_mutex);
             let media_properties_changed_token = wrt_session
                 .MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
                     if let Some(session) = &mut *session_clone.lock().unwrap() {
@@ -85,7 +85,7 @@ impl MediaSession {
                 }))
                 .unwrap();
 
-            let session_clone = Arc::clone(&session_mutex);
+            let session_clone = Arc::clone(session_mutex);
             let timeline_properties_changed_token = wrt_session
                 .TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
                     if let Some(session) = &mut *session_clone.lock().unwrap() {
@@ -113,6 +113,7 @@ impl MediaSession {
         }
     }
 
+    #[allow(clippy::await_holding_lock)]
     async fn update_session_async(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
         let mut session = session_mutex.lock().unwrap();
 
@@ -149,6 +150,7 @@ impl MediaSession {
     }
 }
 
+#[allow(clippy::await_holding_lock)]
 impl MediaSessionControls for MediaSession {
     async fn pause(&self) -> crate::Result<()> {
         if let Some(session) = &*self.session.lock().unwrap() {
