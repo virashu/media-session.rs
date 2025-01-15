@@ -1,143 +1,276 @@
 pub use crate::traits;
 use crate::MediaInfo;
-use dbus::blocking::{self, Connection, Proxy};
+use dbus::blocking;
 use dbus::strings::BusName;
 use dbus::Path;
 use dbus::{
     arg::{PropMap, RefArg},
     blocking::stdintf::org_freedesktop_dbus::Properties as _,
 };
+use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::Duration;
 
 const DBUS_DEST: &str = "org.freedesktop.DBus";
-const DBUS_PATH: &str = "/org/freedesktop/DBus";
+// const DBUS_PATH: &str = "/org/freedesktop/DBus";
 
-const PLAYER_DEST: &'static str = "org.mpris.MediaPlayer2";
-const PLAYER_PATH: &'static str = "/org/mpris/MediaPlayer2";
+const PLAYER_PATH: &str = "/org/mpris/MediaPlayer2";
+
+const PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2";
+const PLAYER_INTERFACE_PLAYER: &str = "org.mpris.MediaPlayer2.Player";
 
 const TIMEOUT: Duration = Duration::new(5, 0);
 
-pub struct MediaSession<'a> {
-    bus: blocking::Connection,
-    player: Option<blocking::Proxy<'a, &'a blocking::Connection>>,
-    callback: Option<Box<dyn Fn(MediaInfo)>>,
+fn get_player_names(proxy: Proxy) -> Vec<String> {
+    let res: (Vec<String>,) = proxy.method_call(DBUS_DEST, "ListNames", ()).unwrap();
+    res.0
 }
+
+fn select_player(proxy: Proxy) -> Option<String> {
+    let names = get_player_names(proxy);
+
+    let players: Vec<String> = names
+        .iter()
+        .filter(|s| s.starts_with(PLAYER_INTERFACE))
+        .cloned()
+        .collect();
+
+    let count = players.len();
+
+    if count > 0 {
+        log::info!("Found {} players", count);
+        if count > 1 {
+            players
+                .iter()
+                .enumerate()
+                .for_each(|(i, p)| log::info!("  {i}) {p}"));
+        }
+        log::info!("Selected: {}", players[0]);
+        return Some(players[0].clone());
+    }
+
+    None
+}
+
+fn get_proxy<'a, D, P>(dest: D, path: P) -> blocking::Proxy<'a, Box<blocking::Connection>>
+where
+    D: Into<BusName<'a>>,
+    P: Into<Path<'a>>,
+{
+    let connection = Box::new(blocking::Connection::new_session().unwrap());
+
+    blocking::Proxy::<'a, Box<blocking::Connection>> {
+        destination: dest.into(),
+        path: path.into(),
+        timeout: TIMEOUT,
+        connection,
+    }
+}
+
+fn get_dbus_proxy<'a>() -> blocking::Proxy<'a, Box<blocking::Connection>> {
+    get_proxy(DBUS_DEST, "/")
+}
+
+pub struct MediaSession<'a> {
+    player: Option<blocking::Proxy<'a, Box<blocking::Connection>>>,
+    prev_cover_url: Option<String>,
+    prev_cover_raw: Option<Vec<u8>>,
+    prev_cover_b64: Option<String>,
+}
+
+type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
 
 impl<'a> MediaSession<'a> {
     pub async fn new() -> Self {
-        let conn = blocking::Connection::new_session().unwrap();
         let mut session = Self {
-            bus: conn,
             player: None,
-            callback: None,
+            prev_cover_url: None,
+            prev_cover_b64: None,
+            prev_cover_raw: None,
         };
 
-        let player = session.create_session().await;
-        session.player = player;
+        let dbus_proxy = get_dbus_proxy();
+
+        if let Some(player_dest) = select_player(dbus_proxy) {
+            let player = get_proxy(player_dest, PLAYER_PATH);
+            session.player = Some(player);
+        } else {
+            log::info!("No players found");
+        }
+
+        session.get_data_internal();
+        log::info!("");
+        log::info!("{:#?}", session.get_info());
 
         session
     }
 
-    fn get_dbus_proxy(&self) -> blocking::Proxy<'a, &blocking::Connection> {
-        self.get_proxy(DBUS_DEST, "/")
-    }
-
-    fn get_proxy<D, P>(&self, dest: D, path: P) -> blocking::Proxy<'a, &blocking::Connection>
-    where
-        D: Into<BusName<'a>>,
-        P: Into<Path<'a>>,
-    {
-        Proxy::<'a, &blocking::Connection> {
-            connection: &self.bus,
-            destination: dest.into(),
-            path: path.into(),
-            timeout: TIMEOUT,
-        }
-    }
-
-    async fn create_session<'b>(&'b self) -> Option<Proxy<'b, &'b Connection>> {
-        let proxy = self.get_dbus_proxy();
-
-        let (names,): (Vec<String>,) = proxy.method_call(DBUS_DEST, "ListNames", ()).unwrap();
-
-        let players: Vec<String> = names
-            .iter()
-            .filter(|s| s.starts_with(PLAYER_DEST))
-            .map(|s_ref| s_ref.clone())
-            .collect();
-
-        let count = players.len();
-
-        if count > 0 {
-            println!("Players found: {}", count);
-        } else {
-            println!("No players found");
-            return None;
-        }
-
-        for player in &players {
-            println!("- {}", player);
-        }
-
-        // TODO: find a way to select the last updated player
-        let selected_dest: String = players[0].clone();
-
-        let player: Proxy<'b, &Connection> = self.get_proxy(selected_dest, PLAYER_PATH);
-
-        Some(player)
-    }
     fn get_data_internal(&self) {
         if let Some(player) = &self.player {
             let metadata: PropMap = player
                 .get("org.mpris.MediaPlayer2.Player", "Metadata")
                 .unwrap();
 
-            for (key, value) in metadata.iter() {
-                print!("  {}: ", key);
-                print_refarg(&value);
+            for (k, value) in metadata.iter() {
+                print!("  {}: ", k);
+
+                if let Some(s) = value.as_str() {
+                    log::info!("  {}:\t {}", k, s);
+                } else if let Some(i) = value.as_i64() {
+                    log::info!("  {}:\t {}", k, i);
+                } else {
+                    log::info!("  {}:\t {:?}", k, value);
+                }
             }
         }
     }
-    pub async fn update(&mut self) {}
 
-    pub fn get_info(&self) -> MediaInfo {
-        todo!()
+    pub fn get_info(&mut self) -> MediaInfo {
+        if let Some(player) = &self.player {
+            let metadata: PropMap = player.get(PLAYER_INTERFACE_PLAYER, "Metadata").unwrap();
+
+            let position: Result<i64, dbus::Error> =
+                player.get(PLAYER_INTERFACE_PLAYER, "Position");
+
+            let state: Result<String, dbus::Error> =
+                player.get(PLAYER_INTERFACE_PLAYER, "PlaybackStatus");
+
+            let cover_raw: Option<Vec<u8>>;
+            let cover_b64: Option<String>;
+
+            if let Some(cover_url) = get_string(&metadata, "mpris:artUrl") {
+                let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
+                cover_raw = self.get_cover_raw(cover_url.clone());
+                cover_b64 = self.get_cover_b64(cover_url.clone());
+            } else {
+                cover_raw = None;
+                cover_b64 = None;
+            }
+
+            return MediaInfo {
+                title: get_string(&metadata, "xesam:title").unwrap_or_default(),
+                artist: get_first_string(&metadata, "xesam:artist").unwrap_or_default(),
+                duration: get_i64(&metadata, "mpris:length").unwrap_or_default(),
+                position: position.unwrap_or_default(),
+                state: state.map(|s| s.to_lowercase()).unwrap_or_default(),
+                cover_raw: cover_raw.unwrap_or_default(),
+                cover_b64: cover_b64.unwrap_or_default(),
+                album_title: get_string(&metadata, "xesam:albumArtist").unwrap_or_default(),
+                album_artist: get_string(&metadata, "xesam:album").unwrap_or_default(),
+            };
+        }
+
+        MediaInfo::default()
     }
-    pub fn set_callback<F>(&mut self, callback: F)
-    where
-        F: Fn(MediaInfo) + 'static,
-    {
-        todo!()
+
+    fn get_cover_raw(&mut self, cover_url: String) -> Option<Vec<u8>> {
+        if let Some(prev_url) = &self.prev_cover_url {
+            if *prev_url == cover_url {
+                return self.prev_cover_raw.clone();
+            }
+        }
+
+        self.prev_cover_url = Some(cover_url.clone());
+
+        log::info!("Reading cover at: {}", cover_url);
+
+        let cover_raw = fs::read(cover_url);
+
+        if let Ok(c) = cover_raw {
+            return Some(c);
+        }
+
+        if let Err(e) = cover_raw {
+            log::error!("Failed to read cover: {e}");
+        }
+
+        None
     }
+
+    fn get_cover_b64(&mut self, cover_url: String) -> Option<String> {
+        if let Some(prev_url) = &self.prev_cover_url {
+            if *prev_url == cover_url {
+                return self.prev_cover_b64.clone();
+            }
+        }
+
+        self.prev_cover_url = Some(cover_url.clone());
+
+        let cover_raw = fs::read(cover_url);
+
+        if let Ok(c) = cover_raw {
+            let b64 =
+                base64::display::Base64Display::new(&c, &base64::engine::general_purpose::STANDARD)
+                    .to_string();
+
+            return Some(b64);
+        }
+
+        None
+    }
+}
+
+fn action(player_opt: &Option<Proxy>, command: &str) -> crate::Result<()> {
+    if let Some(player) = &player_opt {
+        return player
+            .method_call(PLAYER_INTERFACE_PLAYER, command, ())
+            .map_err(crate::error::Error::from);
+    }
+
+    Ok(())
 }
 
 impl traits::MediaSessionControls for MediaSession<'_> {
     async fn next(&self) -> crate::Result<()> {
-        todo!()
+        action(&self.player, "Next")
     }
     async fn pause(&self) -> crate::Result<()> {
-        todo!()
+        action(&self.player, "Pause")
     }
     async fn play(&self) -> crate::Result<()> {
-        todo!()
+        action(&self.player, "Play")
     }
     async fn prev(&self) -> crate::Result<()> {
-        todo!()
+        action(&self.player, "Previous")
     }
     async fn stop(&self) -> crate::Result<()> {
-        todo!()
+        action(&self.player, "Stop")
     }
     async fn toggle_pause(&self) -> crate::Result<()> {
-        todo!()
+        action(&self.player, "PlayPause")
     }
 }
 
-fn print_refarg(value: &dyn RefArg) {
-    if let Some(s) = value.as_str() {
-        println!("{}", s);
-    } else if let Some(i) = value.as_i64() {
-        println!("{}", i);
-    } else {
-        println!("{:?}", value);
-    }
+fn get_i64<StringLike: Into<String>>(meta: &PropMap, key: StringLike) -> Option<i64> {
+    refarg_to_i64(meta.get(&key.into())?)
+}
+
+fn get_string<StringLike: Into<String>>(meta: &PropMap, key: StringLike) -> Option<String> {
+    refarg_to_string(meta.get(&key.into())?)
+}
+
+fn get_first_string<StringLike: Into<String>>(meta: &PropMap, key: StringLike) -> Option<String> {
+    let a = meta.get(&key.into())?;
+    let b = refarg_first(a);
+    refarg_to_string(b)
+}
+
+fn refarg_to_string(value: &dyn RefArg) -> Option<String> {
+    Some(value.as_str()?.to_string())
+}
+
+fn refarg_to_i64(value: &dyn RefArg) -> Option<i64> {
+    value.as_i64()
+}
+
+fn refarg_first(value: &dyn RefArg) -> &dyn RefArg {
+    value
+        .as_iter()
+        .unwrap()
+        .next()
+        .unwrap()
+        .as_iter()
+        .unwrap()
+        .next()
+        .unwrap()
 }

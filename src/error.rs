@@ -27,3 +27,12 @@ impl From<windows::core::Error> for Error {
         }
     }
 }
+
+#[cfg(unix)]
+impl From<dbus::Error> for Error {
+    fn from(value: dbus::Error) -> Self {
+        Self {
+            message: value.message().unwrap_or("Unknown error").to_string(),
+        }
+    }
+}
