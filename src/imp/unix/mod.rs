@@ -144,7 +144,8 @@ impl<'a> MediaSession<'a> {
                     cover_b64 = None;
                 } else {
                     let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
-                    cover_raw = self.get_cover_raw(cover_url.clone());
+                    // cover_raw = self.get_cover_raw(cover_url.clone());
+                    cover_raw = None;
                     cover_b64 = self.get_cover_b64(cover_url.clone());
                 }
             } else {
@@ -182,6 +183,7 @@ impl<'a> MediaSession<'a> {
         let cover_raw = fs::read(cover_url);
 
         if let Ok(c) = cover_raw {
+            log::info!("Read cover; size: {} Bytes", c.len());
             return Some(c);
         }
 
@@ -204,12 +206,15 @@ impl<'a> MediaSession<'a> {
         let cover_raw = fs::read(cover_url);
 
         if let Ok(c) = cover_raw {
+            log::info!("B64 cover read success");
             let b64 =
                 base64::display::Base64Display::new(&c, &base64::engine::general_purpose::STANDARD)
                     .to_string();
 
             return Some(b64);
         }
+
+        log::warn!("Failed to read file for b64!");
 
         None
     }
