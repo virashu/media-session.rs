@@ -161,7 +161,7 @@ impl<'a> MediaSession<'a> {
                 position: position.unwrap_or_default(),
                 state: state.map(|s| s.to_lowercase()).unwrap_or_default(),
                 cover_raw: cover_raw.unwrap_or_default(),
-                cover_b64: cover_b64.unwrap_or_default(),
+                cover_b64: cover_b64.unwrap_or(String::from("Missing")),
                 album_title: get_string(&metadata, "xesam:albumArtist").unwrap_or_default(),
                 album_artist: get_string(&metadata, "xesam:album").unwrap_or_default(),
             };
@@ -212,6 +212,7 @@ impl<'a> MediaSession<'a> {
                 base64::display::Base64Display::new(&c, &base64::engine::general_purpose::STANDARD)
                     .to_string();
             // let b64 = BASE64_STANDARD.encode(c);
+            self.prev_cover_b64 = Some(b64.clone());
 
             return Some(b64);
         }
