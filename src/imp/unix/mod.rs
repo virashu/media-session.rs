@@ -139,9 +139,14 @@ impl<'a> MediaSession<'a> {
             let cover_b64: Option<String>;
 
             if let Some(cover_url) = get_string(&metadata, "mpris:artUrl") {
-                let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
-                cover_raw = self.get_cover_raw(cover_url.clone());
-                cover_b64 = self.get_cover_b64(cover_url.clone());
+                if cover_url.is_empty() {
+                    cover_raw = None;
+                    cover_b64 = None;
+                } else {
+                    let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
+                    cover_raw = self.get_cover_raw(cover_url.clone());
+                    cover_b64 = self.get_cover_b64(cover_url.clone());
+                }
             } else {
                 cover_raw = None;
                 cover_b64 = None;
