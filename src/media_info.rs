@@ -148,6 +148,7 @@ impl std::fmt::Debug for MediaInfo {
 
                 cover_raw: Field { inner: if cr.is_empty() { "<none>" } else { "<...>" } },
                 cover_b64: Field { inner: if c64.is_empty() { "<none>" } else { "<...>" } },
+                // cover_b64: Field { inner: c64 }, // raw display
             },
             f,
         )

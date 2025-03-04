@@ -1,5 +1,7 @@
 pub use crate::traits;
 use crate::MediaInfo;
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use dbus::blocking;
 use dbus::strings::BusName;
 use dbus::Path;
@@ -8,7 +10,6 @@ use dbus::{
     blocking::stdintf::org_freedesktop_dbus::Properties as _,
 };
 use std::fs;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::Duration;
 
 const DBUS_DEST: &str = "org.freedesktop.DBus";
@@ -210,6 +211,7 @@ impl<'a> MediaSession<'a> {
             let b64 =
                 base64::display::Base64Display::new(&c, &base64::engine::general_purpose::STANDARD)
                     .to_string();
+            // let b64 = BASE64_STANDARD.encode(c);
 
             return Some(b64);
         }
