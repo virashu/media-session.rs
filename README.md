@@ -11,6 +11,9 @@ Utilizes: `WinRT.Windows.Media.Control` API on Windows | `DBus/MPRIS` API on Lin
 
 ## Example
 
+> [!NOTE]
+> Linux implementation needs `player` to be mutable.
+
 ```rust
 let mut player = media_session::MediaSession::new().await;
 
@@ -19,10 +22,8 @@ let info: media_session::MediaInfo = player.get_info();
 println!("{:#?}", info);
 ```
 
-> [!NOTE]
-> Linux implementation needs `player` to be mutable.
-
 ```rust
+// Output
 MediaInfo {
     title: "St. Chroma (feat. Daniel Caesar)",
     artist: "Tyler, The Creator",
