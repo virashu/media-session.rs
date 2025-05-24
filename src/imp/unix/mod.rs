@@ -22,13 +22,13 @@ const PLAYER_INTERFACE_PLAYER: &str = "org.mpris.MediaPlayer2.Player";
 
 const TIMEOUT: Duration = Duration::new(5, 0);
 
-fn get_player_names(proxy: Proxy) -> Vec<String> {
+fn get_player_names(proxy: &Proxy) -> Vec<String> {
     let res: (Vec<String>,) = proxy.method_call(DBUS_DEST, "ListNames", ()).unwrap();
     res.0
 }
 
-fn select_player(proxy: Proxy) -> Option<String> {
-    let names = get_player_names(proxy);
+fn select_player(proxy: &Proxy) -> Option<String> {
+    let names = get_player_names(&proxy);
 
     let players: Vec<String> = names
         .iter()
@@ -81,7 +81,8 @@ pub struct MediaSession<'a> {
 
 type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
 
-impl<'a> MediaSession<'a> {
+impl MediaSession<'_> {
+    #[allow(clippy::unused_async)]
     pub async fn new() -> Self {
         let mut session = Self {
             player: None,
@@ -92,7 +93,7 @@ impl<'a> MediaSession<'a> {
 
         let dbus_proxy = get_dbus_proxy();
 
-        if let Some(player_dest) = select_player(dbus_proxy) {
+        if let Some(player_dest) = select_player(&dbus_proxy) {
             let player = get_proxy(player_dest, PLAYER_PATH);
             session.player = Some(player);
         } else {
@@ -112,8 +113,8 @@ impl<'a> MediaSession<'a> {
                 .get("org.mpris.MediaPlayer2.Player", "Metadata")
                 .unwrap();
 
-            for (k, value) in metadata.iter() {
-                print!("  {}: ", k);
+            for (k, value) in &metadata {
+                print!("  {k}: ");
 
                 if let Some(s) = value.as_str() {
                     log::info!("  {}:\t {}", k, s);
@@ -128,6 +129,8 @@ impl<'a> MediaSession<'a> {
 
     pub fn get_info(&mut self) -> MediaInfo {
         if let Some(player) = &self.player {
+
+            // Error on player application close
             let metadata: PropMap = player.get(PLAYER_INTERFACE_PLAYER, "Metadata").unwrap();
 
             let position: Result<i64, dbus::Error> =
@@ -147,7 +150,7 @@ impl<'a> MediaSession<'a> {
                     let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
                     // cover_raw = self.get_cover_raw(cover_url.clone());
                     cover_raw = None;
-                    cover_b64 = self.get_cover_b64(cover_url.clone());
+                    cover_b64 = self.get_cover_b64(cover_url);
                 }
             } else {
                 cover_raw = None;
@@ -161,7 +164,7 @@ impl<'a> MediaSession<'a> {
                 position: position.unwrap_or_default(),
                 state: state.map(|s| s.to_lowercase()).unwrap_or_default(),
                 cover_raw: cover_raw.unwrap_or_default(),
-                cover_b64: cover_b64.unwrap_or(String::from("Missing")),
+                cover_b64: cover_b64.unwrap_or_else(|| String::from("Missing")),
                 album_title: get_string(&metadata, "xesam:albumArtist").unwrap_or_default(),
                 album_artist: get_string(&metadata, "xesam:album").unwrap_or_default(),
             };
