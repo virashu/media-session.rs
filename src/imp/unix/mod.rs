@@ -72,8 +72,8 @@ fn get_dbus_proxy<'a>() -> blocking::Proxy<'a, Box<blocking::Connection>> {
     get_proxy(DBUS_DEST, "/")
 }
 
-pub struct MediaSession<'a> {
-    player: Option<blocking::Proxy<'a, Box<blocking::Connection>>>,
+pub struct MediaSession {
+    player: Option<blocking::Proxy<'static, Box<blocking::Connection>>>,
     prev_cover_url: Option<String>,
     prev_cover_raw: Option<Vec<u8>>,
     prev_cover_b64: Option<String>,
@@ -81,7 +81,7 @@ pub struct MediaSession<'a> {
 
 type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
 
-impl MediaSession<'_> {
+impl MediaSession {
     #[allow(clippy::unused_async)]
     pub async fn new() -> Self {
         let mut session = Self {
@@ -236,7 +236,7 @@ fn action(player_opt: &Option<Proxy>, command: &str) -> crate::Result<()> {
     Ok(())
 }
 
-impl traits::MediaSessionControls for MediaSession<'_> {
+impl traits::MediaSessionControls for MediaSession {
     async fn next(&self) -> crate::Result<()> {
         action(&self.player, "Next")
     }
