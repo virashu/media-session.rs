@@ -62,11 +62,6 @@ fn update(info: MediaInfo) {
 }
 
 async fn start() {
-    // TODO: fix `mut` in unix implementation
-    #[cfg(unix)]
-    let mut player = MediaSession::new().await;
-
-    #[cfg(windows)]
     let player = MediaSession::new().await;
 
     loop {

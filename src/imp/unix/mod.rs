@@ -10,6 +10,7 @@ use dbus::{
     blocking::stdintf::org_freedesktop_dbus::Properties as _,
 };
 use std::fs;
+use std::sync::Mutex;
 use std::time::Duration;
 
 const DBUS_DEST: &str = "org.freedesktop.DBus";
@@ -73,10 +74,10 @@ fn get_dbus_proxy<'a>() -> blocking::Proxy<'a, Box<blocking::Connection>> {
 }
 
 pub struct MediaSession {
-    player: Option<blocking::Proxy<'static, Box<blocking::Connection>>>,
-    prev_cover_url: Option<String>,
-    prev_cover_raw: Option<Vec<u8>>,
-    prev_cover_b64: Option<String>,
+    player: Mutex<Option<blocking::Proxy<'static, Box<blocking::Connection>>>>,
+    prev_cover_url: Mutex<Option<String>>,
+    prev_cover_raw: Mutex<Option<Vec<u8>>>,
+    prev_cover_b64: Mutex<Option<String>>,
 }
 
 type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
@@ -84,19 +85,23 @@ type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
 impl MediaSession {
     #[allow(clippy::unused_async)]
     pub async fn new() -> Self {
-        let mut session = Self {
-            player: None,
-            prev_cover_url: None,
-            prev_cover_b64: None,
-            prev_cover_raw: None,
+        let player = match Self::try_get_player_dest() {
+            Some(player_dest) => {
+                let player = get_proxy(player_dest, PLAYER_PATH);
+                Some(player)
+            }
+            None => {
+                log::info!("No players found");
+                None
+            }
         };
 
-        if let Some(player_dest) = Self::try_get_player_dest() {
-            let player = get_proxy(player_dest, PLAYER_PATH);
-            session.player = Some(player);
-        } else {
-            log::info!("No players found");
-        }
+        let session = Self {
+            player: Mutex::new(player),
+            prev_cover_url: None.into(),
+            prev_cover_b64: None.into(),
+            prev_cover_raw: None.into(),
+        };
 
         session.get_data_internal();
         log::info!("");
@@ -112,7 +117,7 @@ impl MediaSession {
     }
 
     fn get_data_internal(&self) {
-        if let Some(player) = &self.player {
+        if let Some(player) = &*self.player.lock().unwrap() {
             let metadata: PropMap = player
                 .get("org.mpris.MediaPlayer2.Player", "Metadata")
                 .unwrap();
@@ -129,22 +134,23 @@ impl MediaSession {
         }
     }
 
-    fn update_player(&mut self) {
+    fn update_player(&self) {
         // Check for player change
         let new_dest = Self::try_get_player_dest();
-        let cur_dest = self.player.as_ref().map(|p| p.destination.to_string());
+        let mut cur_player = self.player.lock().unwrap();
+        let cur_dest = cur_player.as_ref().map(|p| p.destination.to_string());
 
         if new_dest != cur_dest {
             if let Some(dest) = new_dest {
-                self.player = Some(get_proxy(dest, PLAYER_PATH));
+                *cur_player = Some(get_proxy(dest, PLAYER_PATH));
             }
         }
     }
 
-    pub fn get_info(&mut self) -> MediaInfo {
+    pub fn get_info(&self) -> MediaInfo {
         self.update_player();
 
-        if let Some(player) = &self.player {
+        if let Some(player) = &*self.player.lock().unwrap() {
             // Error on player application close
             let metadata: Result<PropMap, dbus::Error> =
                 player.get(PLAYER_INTERFACE_PLAYER, "Metadata");
@@ -169,6 +175,7 @@ impl MediaSession {
                     cover_raw = None;
                     cover_b64 = None;
                 } else {
+                    log::info!("Cover url: {cover_url}");
                     let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
                     // cover_raw = self.get_cover_raw(cover_url.clone());
                     cover_raw = None;
@@ -196,14 +203,15 @@ impl MediaSession {
     }
 
     fn get_cover_raw(&mut self, cover_url: String) -> Option<Vec<u8>> {
-        if let Some(prev_url) = &self.prev_cover_url {
+        if let Some(prev_url) = &*self.prev_cover_url.lock().unwrap() {
             if *prev_url == cover_url {
-                return self.prev_cover_raw.clone();
+                return self.prev_cover_raw.lock().unwrap().clone();
             }
         }
 
-        self.prev_cover_url = Some(cover_url.clone());
-
+        {
+            *self.prev_cover_url.lock().unwrap() = Some(cover_url.clone());
+        }
         log::info!("Reading cover at: {}", cover_url);
 
         let cover_raw = fs::read(cover_url);
@@ -220,22 +228,23 @@ impl MediaSession {
         None
     }
 
-    fn get_cover_b64(&mut self, cover_url: String) -> Option<String> {
-        if let Some(prev_url) = &self.prev_cover_url {
+    fn get_cover_b64(&self, cover_url: String) -> Option<String> {
+        if let Some(prev_url) = &*self.prev_cover_url.lock().unwrap() {
             if *prev_url == cover_url {
-                return self.prev_cover_b64.clone();
+                return self.prev_cover_b64.lock().unwrap().clone();
             }
         }
 
-        self.prev_cover_url = Some(cover_url.clone());
-
+        {
+            *self.prev_cover_url.lock().unwrap() = Some(cover_url.clone());
+        }
         let cover_raw = fs::read(cover_url);
 
         if let Ok(c) = cover_raw {
             log::info!("B64 cover read success");
             let b64 = Base64Display::new(&c, &BASE64_STANDARD).to_string();
             // let b64 = BASE64_STANDARD.encode(c);
-            self.prev_cover_b64 = Some(b64.clone());
+            *self.prev_cover_b64.lock().unwrap() = Some(b64.clone());
 
             return Some(b64);
         }
@@ -258,22 +267,22 @@ fn action(player_opt: &Option<Proxy>, command: &str) -> crate::Result<()> {
 
 impl traits::MediaSessionControls for MediaSession {
     async fn next(&self) -> crate::Result<()> {
-        action(&self.player, "Next")
+        action(&self.player.lock().unwrap(), "Next")
     }
     async fn pause(&self) -> crate::Result<()> {
-        action(&self.player, "Pause")
+        action(&self.player.lock().unwrap(), "Pause")
     }
     async fn play(&self) -> crate::Result<()> {
-        action(&self.player, "Play")
+        action(&self.player.lock().unwrap(), "Play")
     }
     async fn prev(&self) -> crate::Result<()> {
-        action(&self.player, "Previous")
+        action(&self.player.lock().unwrap(), "Previous")
     }
     async fn stop(&self) -> crate::Result<()> {
-        action(&self.player, "Stop")
+        action(&self.player.lock().unwrap(), "Stop")
     }
     async fn toggle_pause(&self) -> crate::Result<()> {
-        action(&self.player, "PlayPause")
+        action(&self.player.lock().unwrap(), "PlayPause")
     }
 }
 
