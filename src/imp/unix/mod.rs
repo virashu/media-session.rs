@@ -1,7 +1,7 @@
-pub use crate::traits;
+use crate::traits;
 use crate::MediaInfo;
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
+use base64::display::Base64Display;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use dbus::blocking;
 use dbus::strings::BusName;
 use dbus::Path;
@@ -91,9 +91,7 @@ impl MediaSession {
             prev_cover_raw: None,
         };
 
-        let dbus_proxy = get_dbus_proxy();
-
-        if let Some(player_dest) = select_player(&dbus_proxy) {
+        if let Some(player_dest) = Self::try_get_player_dest() {
             let player = get_proxy(player_dest, PLAYER_PATH);
             session.player = Some(player);
         } else {
@@ -107,6 +105,12 @@ impl MediaSession {
         session
     }
 
+    fn try_get_player_dest() -> Option<String> {
+        let dbus_proxy = get_dbus_proxy();
+
+        select_player(&dbus_proxy)
+    }
+
     fn get_data_internal(&self) {
         if let Some(player) = &self.player {
             let metadata: PropMap = player
@@ -114,8 +118,6 @@ impl MediaSession {
                 .unwrap();
 
             for (k, value) in &metadata {
-                print!("  {k}: ");
-
                 if let Some(s) = value.as_str() {
                     log::info!("  {}:\t {}", k, s);
                 } else if let Some(i) = value.as_i64() {
@@ -127,11 +129,31 @@ impl MediaSession {
         }
     }
 
-    pub fn get_info(&mut self) -> MediaInfo {
-        if let Some(player) = &self.player {
+    fn update_player(&mut self) {
+        // Check for player change
+        let new_dest = Self::try_get_player_dest();
+        let cur_dest = self.player.as_ref().map(|p| p.destination.to_string());
 
+        if new_dest != cur_dest {
+            if let Some(dest) = new_dest {
+                self.player = Some(get_proxy(dest, PLAYER_PATH));
+            }
+        }
+    }
+
+    pub fn get_info(&mut self) -> MediaInfo {
+        self.update_player();
+
+        if let Some(player) = &self.player {
             // Error on player application close
-            let metadata: PropMap = player.get(PLAYER_INTERFACE_PLAYER, "Metadata").unwrap();
+            let metadata: Result<PropMap, dbus::Error> =
+                player.get(PLAYER_INTERFACE_PLAYER, "Metadata");
+
+            if metadata.is_err() {
+                return MediaInfo::default();
+            }
+
+            let metadata: PropMap = metadata.unwrap();
 
             let position: Result<i64, dbus::Error> =
                 player.get(PLAYER_INTERFACE_PLAYER, "Position");
@@ -211,9 +233,7 @@ impl MediaSession {
 
         if let Ok(c) = cover_raw {
             log::info!("B64 cover read success");
-            let b64 =
-                base64::display::Base64Display::new(&c, &base64::engine::general_purpose::STANDARD)
-                    .to_string();
+            let b64 = Base64Display::new(&c, &BASE64_STANDARD).to_string();
             // let b64 = BASE64_STANDARD.encode(c);
             self.prev_cover_b64 = Some(b64.clone());
 
