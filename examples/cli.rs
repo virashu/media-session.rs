@@ -22,7 +22,7 @@ fn progress_bar(pos_percent: usize) -> String {
     let start = if pos_percent >= 1 { "" } else { "" };
     let end = if pos_percent >= 100 { "" } else { "" };
 
-    format!("{}{}{}", start, center, end)
+    format!("{start}{center}{end}")
 }
 
 #[cfg(not(feature = "powerfont"))]
@@ -32,7 +32,7 @@ fn progress_bar(pos_percent: usize) -> String {
     let start = "[";
     let end = "]";
 
-    format!("{}{}{}", start, center, end)
+    format!("{start}{center}{end}")
 }
 
 fn update(info: MediaInfo) {
@@ -50,11 +50,10 @@ fn update(info: MediaInfo) {
     write!(lock, "\x1b[2J\x1b[H").unwrap(); /* fast clear */
     write!(
         lock,
-        "       \x1b[1;32m{}\x1b[22;0m\
-        \n       \x1b[2;3;49mby \x1b[32;22m{}\x1b[0m\x1b[23m\
-        \n\n {:>5} {} {:>5}
-        ",
-        title, artist, pos_str, progress_bar, dur_str,
+        "       \x1b[1;32m{title}\x1b[22;0m\
+        \n       \x1b[2;3;49mby \x1b[32;22m{artist}\x1b[0m\x1b[23m\
+        \n\n {pos_str:>5} {progress_bar} {dur_str:>5}
+        "
     )
     .unwrap();
 
@@ -65,7 +64,7 @@ async fn start() {
     let player = MediaSession::new().await;
 
     loop {
-        update(player.get_info());
+        update(player.get_info().await);
 
         std::thread::sleep(Duration::from_millis(100));
     }

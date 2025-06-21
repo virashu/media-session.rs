@@ -11,7 +11,7 @@ pub enum PlaybackState {
 
 impl PlaybackState {
     pub fn from_string(s: String) -> Result<Self, Error> {
-        Self::from_str(s.as_str())
+        Self::from_str(&s)
     }
     pub fn as_str(&self) -> &'static str {
         match self {

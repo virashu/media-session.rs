@@ -83,15 +83,13 @@ impl MediaSessionStruct {
             .inspect_err(|_| log::warn!("Media properties are not accessible"));
         _ = self
             .update_playback_info()
-            .await
             .inspect_err(|_| log::warn!("Playback info is not accessible"));
         _ = self
             .update_timeline_properties()
-            .await
             .inspect_err(|_| log::warn!("Timeline properties are not accessible"));
     }
 
-    fn update_position_mut(info: &mut MediaInfo, pos_info: PositionInfo) {
+    fn update_position_mut(info: &mut MediaInfo, pos_info: &PositionInfo) {
         let position = match PlaybackState::from(info.state.as_ref()) {
             PlaybackState::Stopped => 0i64,
             PlaybackState::Paused => pos_info.pos_raw,
@@ -113,12 +111,12 @@ impl MediaSessionStruct {
     pub fn get_info(&self) -> MediaInfo {
         let mut info = self.media_info.clone();
 
-        Self::update_position_mut(&mut info, self.pos_info.clone());
+        Self::update_position_mut(&mut info, &self.pos_info);
 
         info
     }
 
-    pub async fn update_playback_info(&mut self) -> crate::Result<()> {
+    pub fn update_playback_info(&mut self) -> crate::Result<()> {
         log::debug!("Updating playback info");
 
         let props: PlaybackInfo = self.session.GetPlaybackInfo()?;
@@ -126,8 +124,6 @@ impl MediaSessionStruct {
         self.media_info.state = match props.PlaybackStatus()? {
             PlaybackStatus::Playing => PlaybackState::Playing.into(),
             PlaybackStatus::Paused => PlaybackState::Paused.into(),
-            PlaybackStatus::Stopped => PlaybackState::Stopped.into(),
-
             _ => PlaybackState::Stopped.into(),
         };
 
@@ -146,10 +142,10 @@ impl MediaSessionStruct {
         self.media_info.album_title = props.AlbumTitle()?.to_string();
         self.media_info.album_artist = props.AlbumArtist()?.to_string();
 
-        match props.Thumbnail().or(props.Thumbnail()) {
+        match props.Thumbnail() {
             Ok(ref_) => {
                 let thumb = stream_ref_to_bytes(ref_).await?;
-                self.media_info.cover_raw = thumb.clone();
+                self.media_info.cover_raw.clone_from(&thumb);
 
                 let b64 = Base64Display::new(&thumb, &STANDARD).to_string();
                 self.media_info.cover_b64 = b64;
@@ -162,7 +158,7 @@ impl MediaSessionStruct {
         Ok(())
     }
 
-    pub async fn update_timeline_properties(&mut self) -> crate::Result<()> {
+    pub fn update_timeline_properties(&mut self) -> crate::Result<()> {
         log::debug!("Updating timeline properties");
 
         let props: TimelineProperties = self.session.GetTimelineProperties()?;

@@ -6,7 +6,8 @@ use futures::executor::block_on;
 use super::media_session_struct::EventTokens;
 use super::media_session_struct::MediaSessionStruct;
 
-use std::sync::{Arc, Mutex};
+use futures::lock::Mutex;
+use std::sync::Arc;
 
 use windows::Foundation::{EventRegistrationToken, TypedEventHandler};
 
@@ -43,12 +44,13 @@ impl MediaSession {
         let token = self
             .manager
             .CurrentSessionChanged(&TypedEventHandler::new(move |manager, _| {
-                {
-                    let mut s = session.lock().unwrap();
+                block_on(async {
+                    let mut s = session.lock().await;
                     *s = Self::create_session(manager);
-                }
-                Self::setup_session_listeners(&session);
-                Self::update_session(&session);
+
+                    Self::setup_session_listeners(&session).await;
+                    Self::update_session(&session).await;
+                });
 
                 Ok(())
             }))
@@ -57,8 +59,8 @@ impl MediaSession {
         self.event_token = Some(token);
     }
 
-    fn setup_session_listeners(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
-        let mut session_opt = session_mutex.lock().unwrap();
+    async fn setup_session_listeners(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
+        let mut session_opt = session_mutex.lock().await;
 
         if let Some(session) = &mut *session_opt {
             let wrt_session = session.get_session();
@@ -66,10 +68,13 @@ impl MediaSession {
             let session_clone = Arc::clone(session_mutex);
             let playback_info_changed_token = wrt_session
                 .PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
-                    if let Some(session) = &mut *session_clone.lock().unwrap() {
-                        let _ = block_on(session.update_playback_info())
-                            .inspect_err(|e| log::warn!("Failed to update playback info: {e}"));
-                    }
+                    block_on(async {
+                        if let Some(session) = &mut *session_clone.lock().await {
+                            _ = session
+                                .update_playback_info()
+                                .inspect_err(|e| log::warn!("Failed to update playback info: {e}"));
+                        }
+                    });
                     Ok(())
                 }))
                 .unwrap();
@@ -77,10 +82,13 @@ impl MediaSession {
             let session_clone = Arc::clone(session_mutex);
             let media_properties_changed_token = wrt_session
                 .MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
-                    if let Some(session) = &mut *session_clone.lock().unwrap() {
-                        let _ = block_on(session.update_media_properties())
-                            .inspect_err(|e| log::warn!("Failed to update media properties: {e}"));
-                    }
+                    block_on(async {
+                        if let Some(session) = &mut *session_clone.lock().await {
+                            _ = session.update_media_properties().await.inspect_err(|e| {
+                                log::warn!("Failed to update media properties: {e}")
+                            });
+                        }
+                    });
                     Ok(())
                 }))
                 .unwrap();
@@ -88,34 +96,35 @@ impl MediaSession {
             let session_clone = Arc::clone(session_mutex);
             let timeline_properties_changed_token = wrt_session
                 .TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
-                    if let Some(session) = &mut *session_clone.lock().unwrap() {
-                        let _ = block_on(session.update_timeline_properties()).inspect_err(|e| {
-                            log::warn!("Failed to update timeline properties: {e}")
-                        });
-                    }
+                    block_on(async {
+                        if let Some(session) = &mut *session_clone.lock().await {
+                            _ = session.update_timeline_properties().inspect_err(|e| {
+                                log::warn!("Failed to update timeline properties: {e}")
+                            });
+                        }
+                    });
                     Ok(())
                 }))
                 .unwrap();
 
             session.set_event_tokens(EventTokens {
-                media_properties_changed_token,
                 playback_info_changed_token,
+                media_properties_changed_token,
                 timeline_properties_changed_token,
             });
         }
     }
 
-    fn update_session(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
-        let mut session = session_mutex.lock().unwrap();
+    async fn update_session(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
+        let mut session = session_mutex.lock().await;
 
         if let Some(session) = &mut *session {
             block_on(session.full_update());
         }
     }
 
-    #[allow(clippy::await_holding_lock)]
     async fn update_session_async(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
-        let mut session = session_mutex.lock().unwrap();
+        let mut session = session_mutex.lock().await;
 
         if let Some(session) = &mut *session {
             session.full_update().await;
@@ -139,8 +148,8 @@ impl MediaSession {
         None
     }
 
-    pub fn get_info(&self) -> MediaInfo {
-        let session = self.session.lock().unwrap();
+    pub async fn get_info(&self) -> MediaInfo {
+        let session = self.session.lock().await;
 
         if let Some(session) = &*session {
             return session.get_info();
@@ -150,10 +159,9 @@ impl MediaSession {
     }
 }
 
-#[allow(clippy::await_holding_lock)]
 impl MediaSessionControls for MediaSession {
     async fn pause(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().unwrap() {
+        if let Some(session) = &*self.session.lock().await {
             session.pause().await?;
         }
 
@@ -161,35 +169,35 @@ impl MediaSessionControls for MediaSession {
     }
 
     async fn play(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().unwrap() {
+        if let Some(session) = &*self.session.lock().await {
             session.play().await?;
         }
         Ok(())
     }
 
     async fn toggle_pause(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().unwrap() {
+        if let Some(session) = &*self.session.lock().await {
             session.toggle_pause().await?;
         }
         Ok(())
     }
 
     async fn stop(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().unwrap() {
+        if let Some(session) = &*self.session.lock().await {
             session.stop().await?;
         }
         Ok(())
     }
 
     async fn next(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().unwrap() {
+        if let Some(session) = &*self.session.lock().await {
             session.next().await?;
         }
         Ok(())
     }
 
     async fn prev(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().unwrap() {
+        if let Some(session) = &*self.session.lock().await {
             session.prev().await?;
         }
         Ok(())

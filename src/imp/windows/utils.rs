@@ -6,6 +6,7 @@ use windows::Storage::Streams::{
 
 pub async fn stream_ref_to_bytes(stream_ref: WRT_IStreamRef) -> crate::Result<Vec<u8>> {
     let readable_stream: WRT_IStream = stream_ref.OpenReadAsync()?.await?;
+    #[allow(clippy::cast_possible_truncation)]
     let read_size = readable_stream.Size()? as u32;
     let buffer: WRT_Buffer = WRT_Buffer::Create(read_size)?;
 

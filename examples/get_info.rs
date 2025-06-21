@@ -10,7 +10,7 @@ async fn start() {
     #[cfg(windows)]
     let player = MediaSession::new().await;
 
-    let info = player.get_info();
+    let info = player.get_info().await;
 
     println!("{:#?}", info);
 }

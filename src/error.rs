@@ -23,7 +23,7 @@ impl std::error::Error for Error {}
 impl From<windows::core::Error> for Error {
     fn from(e: windows::core::Error) -> Self {
         Self {
-            message: e.message().to_string(),
+            message: e.message(),
         }
     }
 }
