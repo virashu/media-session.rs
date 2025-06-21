@@ -1,6 +1,7 @@
+use futures::executor::block_on;
+
 use std::{thread, time::Duration};
 
-use futures::executor::block_on;
 use media_session::MediaSession;
 
 async fn start() {

@@ -1,12 +1,11 @@
 use futures::executor::block_on;
 
-use std::cmp::max;
-use std::time::Duration;
+use std::{
+    io::{stdout, Write},
+    time::Duration,
+};
 
-use media_session::MediaSession;
-
-use media_session::MediaInfo;
-use std::io::{stdout, Write};
+use media_session::{MediaInfo, MediaSession};
 
 fn human_time(microsecs: i64) -> String {
     let secs = microsecs / 1_000_000;

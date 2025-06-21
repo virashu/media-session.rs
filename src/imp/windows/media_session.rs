@@ -1,17 +1,13 @@
-use crate::traits::MediaSessionControls;
-use crate::MediaInfo;
+use futures::{executor::block_on, lock::Mutex};
+use windows::{
+    Foundation::{EventRegistrationToken, TypedEventHandler},
+    Media::Control::GlobalSystemMediaTransportControlsSessionManager as WRT_MediaManager,
+};
 
-use futures::executor::block_on;
-
-use super::media_session_struct::EventTokens;
-use super::media_session_struct::MediaSessionStruct;
-
-use futures::lock::Mutex;
 use std::sync::Arc;
 
-use windows::Foundation::{EventRegistrationToken, TypedEventHandler};
-
-use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as WRT_MediaManager;
+use super::media_session_struct::{EventTokens, MediaSessionStruct};
+use crate::{traits::MediaSessionControls, MediaInfo};
 
 pub struct MediaSession {
     manager: WRT_MediaManager,
@@ -85,7 +81,7 @@ impl MediaSession {
                     block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session.update_media_properties().await.inspect_err(|e| {
-                                log::warn!("Failed to update media properties: {e}")
+                                log::warn!("Failed to update media properties: {e}");
                             });
                         }
                     });
@@ -99,7 +95,7 @@ impl MediaSession {
                     block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session.update_timeline_properties().inspect_err(|e| {
-                                log::warn!("Failed to update timeline properties: {e}")
+                                log::warn!("Failed to update timeline properties: {e}");
                             });
                         }
                     });
