@@ -1,6 +1,7 @@
 use crate::PlaybackState;
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct MediaInfo {
     pub title: String,
     pub artist: String,
@@ -12,6 +13,7 @@ pub struct MediaInfo {
     pub position: i64,
 
     pub cover_b64: String,
+    #[cfg_attr(feature = "serde", serde(skip_serializing))]
     pub cover_raw: Vec<u8>,
 
     pub state: String, // stopped, paused, playing
