@@ -9,9 +9,7 @@ use dbus::{
     arg::{PropMap, RefArg},
     blocking::stdintf::org_freedesktop_dbus::Properties as _,
 };
-use std::fs;
-use std::sync::Mutex;
-use std::time::Duration;
+use std::{fs, sync::Mutex, time::Duration};
 
 const DBUS_DEST: &str = "org.freedesktop.DBus";
 // const DBUS_PATH: &str = "/org/freedesktop/DBus";
