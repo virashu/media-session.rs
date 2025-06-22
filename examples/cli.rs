@@ -1,9 +1,9 @@
-use futures::executor::block_on;
-
 use std::{
     io::{stdout, Write},
     time::Duration,
 };
+
+use futures::executor::block_on;
 
 use media_session::{MediaInfo, MediaSession};
 
@@ -15,8 +15,8 @@ fn human_time(microsecs: i64) -> String {
 
 #[cfg(feature = "powerfont")]
 fn progress_bar(pos_percent: usize) -> String {
-    let center = "".repeat(max(pos_percent as i64 - 2, 0) as usize)
-        + &"".repeat(max(100 - pos_percent as i64 - 2, 0) as usize);
+    let center = "".repeat(std::cmp::max(pos_percent as i64 - 2, 0) as usize)
+        + &"".repeat(std::cmp::max(100 - pos_percent as i64 - 2, 0) as usize);
 
     let start = if pos_percent >= 1 { "" } else { "" };
     let end = if pos_percent >= 100 { "" } else { "" };

@@ -1,28 +1,27 @@
-use super::utils::stream_ref_to_bytes;
-
-use std::cmp::min;
-use std::fmt::Debug;
+use std::{cmp::min, fmt::Debug};
 
 use base64::{display::Base64Display, engine::general_purpose::STANDARD};
-use log;
-use windows::Foundation::EventRegistrationToken;
-use windows::Media::Control::{
-    GlobalSystemMediaTransportControlsSession as WRT_MediaSession,
-    GlobalSystemMediaTransportControlsSessionMediaProperties as MediaProperties,
-    GlobalSystemMediaTransportControlsSessionPlaybackInfo as PlaybackInfo,
-    GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
-    GlobalSystemMediaTransportControlsSessionTimelineProperties as TimelineProperties,
+use windows::{
+    Foundation::EventRegistrationToken,
+    Media::Control::{
+        GlobalSystemMediaTransportControlsSession as WRT_MediaSession,
+        GlobalSystemMediaTransportControlsSessionMediaProperties as MediaProperties,
+        GlobalSystemMediaTransportControlsSessionPlaybackInfo as PlaybackInfo,
+        GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
+        GlobalSystemMediaTransportControlsSessionTimelineProperties as TimelineProperties,
+    },
 };
 
+use super::utils::stream_ref_to_bytes;
 use crate::traits::MediaSessionControls;
 use crate::utils::{micros_since_epoch, nt_to_unix};
 use crate::{MediaInfo, PlaybackState, PositionInfo};
 
 #[derive(Clone, Debug)]
 pub(super) struct EventTokens {
-    pub playback_info_changed_token: EventRegistrationToken,
-    pub media_properties_changed_token: EventRegistrationToken,
-    pub timeline_properties_changed_token: EventRegistrationToken,
+    pub playback_info: EventRegistrationToken,
+    pub media_properties: EventRegistrationToken,
+    pub timeline_properties: EventRegistrationToken,
 }
 
 pub(super) struct MediaSessionStruct {
@@ -60,21 +59,17 @@ impl MediaSessionStruct {
     fn drop_event_listeners(&mut self) {
         if let Some(tokens) = &self.event_tokens {
             self.session
-                .RemoveMediaPropertiesChanged(tokens.media_properties_changed_token)
+                .RemoveMediaPropertiesChanged(tokens.media_properties)
                 .unwrap();
             self.session
-                .RemovePlaybackInfoChanged(tokens.playback_info_changed_token)
+                .RemovePlaybackInfoChanged(tokens.playback_info)
                 .unwrap();
             self.session
-                .RemoveTimelinePropertiesChanged(tokens.timeline_properties_changed_token)
+                .RemoveTimelinePropertiesChanged(tokens.timeline_properties)
                 .unwrap();
         }
         self.clear_event_tokens();
     }
-
-    // async fn update(&mut self) {
-    //     self.update_position().await;
-    // }
 
     pub async fn full_update(&mut self) {
         _ = self
@@ -95,18 +90,17 @@ impl MediaSessionStruct {
             PlaybackState::Paused => pos_info.pos_raw,
             PlaybackState::Playing => {
                 let update_delta = micros_since_epoch() - pos_info.pos_last_update;
+
+                #[allow(clippy::cast_precision_loss, reason = "needed for multiplication")]
                 let track_delta = update_delta as f64 * pos_info.playback_rate;
+
+                #[allow(clippy::cast_possible_truncation, reason = "rounded")]
                 min(info.duration, pos_info.pos_raw + track_delta.round() as i64)
             }
         };
 
         info.position = position;
     }
-
-    // async fn update_position(&mut self) {
-    //     let info_wrapper = &mut self.media_info;
-    //     Self::update_position_mut(info_wrapper, self.pos_info.clone());
-    // }
 
     pub fn get_info(&self) -> MediaInfo {
         let mut info = self.media_info.clone();

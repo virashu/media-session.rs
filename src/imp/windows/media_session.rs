@@ -104,9 +104,9 @@ impl MediaSession {
                 .unwrap();
 
             session.set_event_tokens(EventTokens {
-                playback_info_changed_token,
-                media_properties_changed_token,
-                timeline_properties_changed_token,
+                playback_info: playback_info_changed_token,
+                media_properties: media_properties_changed_token,
+                timeline_properties: timeline_properties_changed_token,
             });
         }
     }
