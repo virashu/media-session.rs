@@ -7,15 +7,12 @@ Rust library to control / get metadata of music playback
 Utilizes: `WinRT.Windows.Media.Control` API on Windows | `DBus/MPRIS` API on Linux
 
 > [!NOTE]
-> See a deeper usage example at [virashu/media_control.rs](https://github.com/virashu/media_control.rs).
+> See a deeper usage example at [virashu/media-control.rs](https://github.com/virashu/media-control.rs).
 
 ## Example
 
-> [!NOTE]
-> Linux implementation needs `player` to be mutable.
-
 ```rust
-let mut player = media_session::MediaSession::new().await;
+let player = media_session::MediaSession::new().await;
 
 let info: media_session::MediaInfo = player.get_info();
 
