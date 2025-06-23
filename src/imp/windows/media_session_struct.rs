@@ -33,8 +33,8 @@ pub(super) struct MediaSessionStruct {
 
 impl MediaSessionStruct {
     pub fn new(session: WRT_MediaSession) -> Self {
-        let media_info = MediaInfo::new();
-        let pos_info = PositionInfo::new();
+        let media_info = MediaInfo::default();
+        let pos_info = PositionInfo::default();
 
         Self {
             media_info,

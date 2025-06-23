@@ -127,6 +127,7 @@ impl MediaSession {
         }
     }
 
+    #[allow(clippy::ref_option, reason = "used like this by WinRT")]
     fn create_session(manager: &Option<WRT_MediaManager>) -> Option<MediaSessionStruct> {
         if let Some(manager) = manager {
             let wrt_session = manager.GetCurrentSession();

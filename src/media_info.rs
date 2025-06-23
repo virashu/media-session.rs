@@ -9,7 +9,9 @@ pub struct MediaInfo {
     pub album_title: String,
     pub album_artist: String,
 
+    /// Microseconds
     pub duration: i64,
+    /// Microseconds since start
     pub position: i64,
 
     pub cover_b64: String,
@@ -17,49 +19,6 @@ pub struct MediaInfo {
     pub cover_raw: Vec<u8>,
 
     pub state: String, // stopped, paused, playing
-}
-
-impl MediaInfo {
-    pub fn new() -> Self {
-        Self {
-            title: String::new(),
-            artist: String::new(),
-
-            album_title: String::new(),
-            album_artist: String::new(),
-
-            duration: 0, // Microseconds
-            position: 0, // Microseconds since start
-
-            cover_b64: String::new(),
-            cover_raw: Vec::new(),
-
-            state: PlaybackState::Stopped.into(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PositionInfo {
-    pub playback_rate: f64,
-    pub pos_last_update: i64,
-    pub pos_raw: i64,
-}
-
-impl PositionInfo {
-    pub fn new() -> Self {
-        Self {
-            playback_rate: 1.0,
-            pos_last_update: 0,
-            pos_raw: 0,
-        }
-    }
-}
-
-impl Default for PositionInfo {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(feature = "json")]
@@ -81,8 +40,8 @@ impl From<MediaInfo> for json::JsonValue {
 impl Default for MediaInfo {
     fn default() -> Self {
         Self {
-            title: String::from("-"),
-            artist: String::from("-"),
+            title: String::new(),
+            artist: String::new(),
 
             album_title: String::new(),
             album_artist: String::new(),
@@ -147,11 +106,32 @@ impl std::fmt::Debug for MediaInfo {
                 position,
                 state,
 
-                cover_raw: Field { inner: if cr.is_empty() { "<none>" } else { "<...>" } },
-                cover_b64: Field { inner: if c64.is_empty() { "<none>" } else { "<...>" } },
+                cover_raw: Field {
+                    inner: if cr.is_empty() { "<none>" } else { "<...>" },
+                },
+                cover_b64: Field {
+                    inner: if c64.is_empty() { "<none>" } else { "<...>" },
+                },
                 // cover_b64: Field { inner: c64 }, // raw display
             },
             f,
         )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PositionInfo {
+    pub playback_rate: f64,
+    pub pos_last_update: i64,
+    pub pos_raw: i64,
+}
+
+impl Default for PositionInfo {
+    fn default() -> Self {
+        Self {
+            playback_rate: 1.0,
+            pos_last_update: 0,
+            pos_raw: 0,
+        }
     }
 }
