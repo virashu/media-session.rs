@@ -3,8 +3,6 @@ use std::{
     time::Duration,
 };
 
-use futures::executor::block_on;
-
 use media_session::{MediaInfo, MediaSession};
 
 fn human_time(microsecs: i64) -> String {
@@ -35,6 +33,11 @@ fn progress_bar(pos_percent: usize) -> String {
 }
 
 fn update(info: MediaInfo) {
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
     let pos_percent: usize = (info.position as f64 / info.duration as f64 * 100.0) as usize;
 
     let progress_bar = progress_bar(pos_percent);
@@ -59,18 +62,16 @@ fn update(info: MediaInfo) {
     lock.flush().unwrap();
 }
 
-async fn start() {
-    let player = MediaSession::new().await;
+fn main() {
+    // print!("\x1b[?25l");
+
+    let player = MediaSession::new();
 
     loop {
-        update(player.get_info().await);
+        update(player.get_info());
 
         std::thread::sleep(Duration::from_millis(100));
     }
-}
 
-fn main() {
-    print!("\x1b[?25l");
-    block_on(start());
-    print!("\x1b[?25h");
+    // print!("\x1b[?25h");
 }

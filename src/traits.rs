@@ -10,12 +10,11 @@
 //     fn get_info(&self) -> MediaInfo;
 // }
 
-#[allow(async_fn_in_trait)]
 pub trait MediaSessionControls {
-    async fn toggle_pause(&self) -> crate::Result<()>;
-    async fn pause(&self) -> crate::Result<()>;
-    async fn play(&self) -> crate::Result<()>;
-    async fn stop(&self) -> crate::Result<()>;
-    async fn next(&self) -> crate::Result<()>;
-    async fn prev(&self) -> crate::Result<()>;
+    fn toggle_pause(&self) -> crate::Result<()>;
+    fn pause(&self) -> crate::Result<()>;
+    fn play(&self) -> crate::Result<()>;
+    fn stop(&self) -> crate::Result<()>;
+    fn next(&self) -> crate::Result<()>;
+    fn prev(&self) -> crate::Result<()>;
 }

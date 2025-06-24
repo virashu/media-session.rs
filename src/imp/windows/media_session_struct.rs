@@ -167,40 +167,38 @@ impl MediaSessionStruct {
 
         Ok(())
     }
-}
 
-impl MediaSessionControls for MediaSessionStruct {
-    async fn pause(&self) -> crate::Result<()> {
+    pub async fn pause(&self) -> crate::Result<()> {
         self.session.TryPauseAsync()?.await?;
 
         Ok(())
     }
 
-    async fn play(&self) -> crate::Result<()> {
+    pub async fn play(&self) -> crate::Result<()> {
         self.session.TryPlayAsync()?.await?;
 
         Ok(())
     }
 
-    async fn toggle_pause(&self) -> crate::Result<()> {
+    pub async fn toggle_pause(&self) -> crate::Result<()> {
         self.session.TryTogglePlayPauseAsync()?.await?;
 
         Ok(())
     }
 
-    async fn stop(&self) -> crate::Result<()> {
+    pub async fn stop(&self) -> crate::Result<()> {
         self.session.TryStopAsync()?.await?;
 
         Ok(())
     }
 
-    async fn next(&self) -> crate::Result<()> {
+    pub async fn next(&self) -> crate::Result<()> {
         self.session.TrySkipNextAsync()?.await?;
 
         Ok(())
     }
 
-    async fn prev(&self) -> crate::Result<()> {
+    pub async fn prev(&self) -> crate::Result<()> {
         self.session.TrySkipPreviousAsync()?.await?;
 
         Ok(())

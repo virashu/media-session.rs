@@ -81,8 +81,7 @@ pub struct MediaSession {
 type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
 
 impl MediaSession {
-    #[allow(clippy::unused_async)]
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         let player = match Self::try_get_player_dest() {
             Some(player_dest) => {
                 let player = get_proxy(player_dest, PLAYER_PATH);
@@ -264,22 +263,22 @@ fn action(player_opt: &Option<Proxy>, command: &str) -> crate::Result<()> {
 }
 
 impl traits::MediaSessionControls for MediaSession {
-    async fn next(&self) -> crate::Result<()> {
+    fn next(&self) -> crate::Result<()> {
         action(&self.player.lock().unwrap(), "Next")
     }
-    async fn pause(&self) -> crate::Result<()> {
+    fn pause(&self) -> crate::Result<()> {
         action(&self.player.lock().unwrap(), "Pause")
     }
-    async fn play(&self) -> crate::Result<()> {
+    fn play(&self) -> crate::Result<()> {
         action(&self.player.lock().unwrap(), "Play")
     }
-    async fn prev(&self) -> crate::Result<()> {
+    fn prev(&self) -> crate::Result<()> {
         action(&self.player.lock().unwrap(), "Previous")
     }
-    async fn stop(&self) -> crate::Result<()> {
+    fn stop(&self) -> crate::Result<()> {
         action(&self.player.lock().unwrap(), "Stop")
     }
-    async fn toggle_pause(&self) -> crate::Result<()> {
+    fn toggle_pause(&self) -> crate::Result<()> {
         action(&self.player.lock().unwrap(), "PlayPause")
     }
 }

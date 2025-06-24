@@ -1,29 +1,42 @@
-use futures::{executor::block_on, lock::Mutex};
+use std::sync::Arc;
+
+use tokio::{runtime::Runtime, sync::Mutex};
 use windows::{
     Foundation::{EventRegistrationToken, TypedEventHandler},
     Media::Control::GlobalSystemMediaTransportControlsSessionManager as WRT_MediaManager,
 };
 
-use std::sync::Arc;
-
 use super::media_session_struct::{EventTokens, MediaSessionStruct};
 use crate::{traits::MediaSessionControls, MediaInfo};
 
 pub struct MediaSession {
+    rt: Arc<Runtime>,
     manager: WRT_MediaManager,
     session: Arc<Mutex<Option<MediaSessionStruct>>>,
     event_token: Option<EventRegistrationToken>,
 }
 
+#[allow(clippy::new_without_default)]
 impl MediaSession {
-    pub async fn new() -> Self {
-        let manager = WRT_MediaManager::RequestAsync().unwrap().await.unwrap();
+    pub fn new() -> Self {
+        let rt = Arc::new(
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap(),
+        );
+
+        let manager = rt
+            .block_on(WRT_MediaManager::RequestAsync().unwrap())
+            .unwrap();
+
         let session_opt = Self::create_session(&Some(manager.clone()));
         let session = Arc::new(Mutex::new(session_opt));
 
-        Self::update_session_async(&session).await;
+        Self::update_session(&rt, &session);
 
         let mut media_session = Self {
+            rt,
             manager,
             session,
             event_token: None,
@@ -36,17 +49,17 @@ impl MediaSession {
 
     fn setup_manager_listeners(&mut self) {
         let session = Arc::clone(&self.session);
+        let rt = Arc::clone(&self.rt);
 
         let token = self
             .manager
             .CurrentSessionChanged(&TypedEventHandler::new(move |manager, _| {
-                block_on(async {
-                    let mut s = session.lock().await;
-                    *s = Self::create_session(manager);
-
-                    Self::setup_session_listeners(&session).await;
-                    Self::update_session(&session).await;
+                rt.block_on(async {
+                    *session.lock().await = Self::create_session(manager);
                 });
+
+                Self::setup_session_listeners(&rt, &session);
+                Self::update_session(&rt, &session);
 
                 Ok(())
             }))
@@ -55,16 +68,20 @@ impl MediaSession {
         self.event_token = Some(token);
     }
 
-    async fn setup_session_listeners(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
-        let mut session_opt = session_mutex.lock().await;
+    fn setup_session_listeners(
+        rt: &Arc<Runtime>,
+        session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>,
+    ) {
+        let mut session_opt = rt.block_on(session_mutex.lock());
 
         if let Some(session) = &mut *session_opt {
             let wrt_session = session.get_session();
 
             let session_clone = Arc::clone(session_mutex);
+            let rt_clone = Arc::clone(rt);
             let playback_info_changed_token = wrt_session
                 .PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
-                    block_on(async {
+                    rt_clone.block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session
                                 .update_playback_info()
@@ -76,9 +93,10 @@ impl MediaSession {
                 .unwrap();
 
             let session_clone = Arc::clone(session_mutex);
+            let rt_clone = Arc::clone(rt);
             let media_properties_changed_token = wrt_session
                 .MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
-                    block_on(async {
+                    rt_clone.block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session.update_media_properties().await.inspect_err(|e| {
                                 log::warn!("Failed to update media properties: {e}");
@@ -90,9 +108,10 @@ impl MediaSession {
                 .unwrap();
 
             let session_clone = Arc::clone(session_mutex);
+            let rt_clone = Arc::clone(rt);
             let timeline_properties_changed_token = wrt_session
                 .TimelinePropertiesChanged(&TypedEventHandler::new(move |_, _| {
-                    block_on(async {
+                    rt_clone.block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session.update_timeline_properties().inspect_err(|e| {
                                 log::warn!("Failed to update timeline properties: {e}");
@@ -111,20 +130,14 @@ impl MediaSession {
         }
     }
 
-    async fn update_session(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
-        let mut session = session_mutex.lock().await;
+    fn update_session(rt: &Runtime, session: &Arc<Mutex<Option<MediaSessionStruct>>>) {
+        rt.block_on(async {
+            let mut session = session.lock().await;
 
-        if let Some(session) = &mut *session {
-            block_on(session.full_update());
-        }
-    }
-
-    async fn update_session_async(session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>) {
-        let mut session = session_mutex.lock().await;
-
-        if let Some(session) = &mut *session {
-            session.full_update().await;
-        }
+            if let Some(session) = &mut *session {
+                session.full_update().await;
+            }
+        });
     }
 
     #[allow(clippy::ref_option, reason = "used like this by WinRT")]
@@ -145,8 +158,8 @@ impl MediaSession {
         None
     }
 
-    pub async fn get_info(&self) -> MediaInfo {
-        let session = self.session.lock().await;
+    pub fn get_info(&self) -> MediaInfo {
+        let session = self.rt.block_on(self.session.lock());
 
         if let Some(session) = &*session {
             return session.get_info();
@@ -157,45 +170,50 @@ impl MediaSession {
 }
 
 impl MediaSessionControls for MediaSession {
-    async fn pause(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().await {
-            session.pause().await?;
-        }
-
-        Ok(())
-    }
-
-    async fn play(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().await {
-            session.play().await?;
+    fn pause(&self) -> crate::Result<()> {
+        let opt = self.rt.block_on(self.session.lock());
+        if let Some(session) = &*opt {
+            self.rt.block_on(session.pause())?;
         }
         Ok(())
     }
 
-    async fn toggle_pause(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().await {
-            session.toggle_pause().await?;
+    fn play(&self) -> crate::Result<()> {
+        let opt = self.rt.block_on(self.session.lock());
+        if let Some(session) = &*opt {
+            self.rt.block_on(session.play())?;
         }
         Ok(())
     }
 
-    async fn stop(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().await {
-            session.stop().await?;
+    fn toggle_pause(&self) -> crate::Result<()> {
+        let opt = self.rt.block_on(self.session.lock());
+        if let Some(session) = &*opt {
+            self.rt.block_on(session.toggle_pause())?;
         }
         Ok(())
     }
 
-    async fn next(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().await {
-            session.next().await?;
+    fn stop(&self) -> crate::Result<()> {
+        let opt = self.rt.block_on(self.session.lock());
+        if let Some(session) = &*opt {
+            self.rt.block_on(session.stop())?;
         }
         Ok(())
     }
 
-    async fn prev(&self) -> crate::Result<()> {
-        if let Some(session) = &*self.session.lock().await {
-            session.prev().await?;
+    fn next(&self) -> crate::Result<()> {
+        let opt = self.rt.block_on(self.session.lock());
+        if let Some(session) = &*opt {
+            self.rt.block_on(session.next())?;
+        }
+        Ok(())
+    }
+
+    fn prev(&self) -> crate::Result<()> {
+        let opt = self.rt.block_on(self.session.lock());
+        if let Some(session) = &*opt {
+            self.rt.block_on(session.prev())?;
         }
         Ok(())
     }
