@@ -65,9 +65,10 @@ fn update(info: MediaInfo) {
 fn main() {
     // print!("\x1b[?25l");
 
-    let player = MediaSession::new();
+    let mut player = MediaSession::new();
 
     loop {
+        player.update();
         update(player.get_info());
 
         std::thread::sleep(Duration::from_millis(100));
