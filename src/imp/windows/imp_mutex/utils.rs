@@ -4,6 +4,7 @@ use windows::Storage::Streams::{
     IRandomAccessStreamWithContentType as WRT_IStream, InputStreamOptions,
 };
 
+#[allow(clippy::future_not_send)]
 pub async fn stream_ref_to_bytes(stream_ref: WRT_IStreamRef) -> crate::Result<Vec<u8>> {
     let readable_stream: WRT_IStream = stream_ref.OpenReadAsync()?.await?;
     #[allow(clippy::cast_possible_truncation)]

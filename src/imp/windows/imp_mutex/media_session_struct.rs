@@ -70,17 +70,18 @@ impl MediaSessionStruct {
         self.clear_event_tokens();
     }
 
+    #[allow(clippy::future_not_send)]
     pub async fn full_update(&mut self) {
         _ = self
             .update_media_properties()
             .await
-            .inspect_err(|_| log::warn!("Media properties are not accessible"));
+            .inspect_err(|_| tracing::warn!("Media properties are not accessible"));
         _ = self
             .update_playback_info()
-            .inspect_err(|_| log::warn!("Playback info is not accessible"));
+            .inspect_err(|_| tracing::warn!("Playback info is not accessible"));
         _ = self
             .update_timeline_properties()
-            .inspect_err(|_| log::warn!("Timeline properties are not accessible"));
+            .inspect_err(|_| tracing::warn!("Timeline properties are not accessible"));
     }
 
     fn update_position_mut(info: &mut MediaInfo, pos_info: &PositionInfo) {
@@ -110,7 +111,7 @@ impl MediaSessionStruct {
     }
 
     pub fn update_playback_info(&mut self) -> crate::Result<()> {
-        log::debug!("Updating playback info");
+        tracing::debug!("Updating playback info");
 
         let props: PlaybackInfo = self.session.GetPlaybackInfo()?;
 
@@ -125,8 +126,9 @@ impl MediaSessionStruct {
         Ok(())
     }
 
+    #[allow(clippy::future_not_send)]
     pub async fn update_media_properties(&mut self) -> crate::Result<()> {
-        log::debug!("Updating media properties");
+        tracing::debug!("Updating media properties");
 
         let props: MediaProperties = self.session.TryGetMediaPropertiesAsync()?.await?;
 
@@ -144,7 +146,7 @@ impl MediaSessionStruct {
                 self.media_info.cover_b64 = b64;
             }
             Err(_) => {
-                log::error!("Failed to get thumbnail");
+                tracing::error!("Failed to get thumbnail");
             }
         }
 
@@ -152,7 +154,7 @@ impl MediaSessionStruct {
     }
 
     pub fn update_timeline_properties(&mut self) -> crate::Result<()> {
-        log::debug!("Updating timeline properties");
+        tracing::debug!("Updating timeline properties");
 
         let props: TimelineProperties = self.session.GetTimelineProperties()?;
 
@@ -206,7 +208,7 @@ impl MediaSessionStruct {
 
 impl Drop for MediaSessionStruct {
     fn drop(&mut self) {
-        log::debug!("Session dropped");
+        tracing::debug!("Session dropped");
         self.drop_event_listeners();
     }
 }

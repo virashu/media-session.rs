@@ -4,9 +4,7 @@ use media_session::MediaSession;
 
 fn main() {
     #[cfg(feature = "colog")]
-    colog::default_builder()
-        .filter(None, log::LevelFilter::Debug)
-        .init();
+    colog::default_builder().init();
 
     let _player = MediaSession::new();
 

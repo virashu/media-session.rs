@@ -87,7 +87,7 @@ impl MediaSession {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session
                                 .update_playback_info()
-                                .inspect_err(|e| log::warn!("Failed to update playback info: {e}"));
+                                .inspect_err(|e| tracing::warn!("Failed to update playback info: {e}"));
                         }
                     });
                     Ok(())
@@ -101,7 +101,7 @@ impl MediaSession {
                     rt_clone.block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session.update_media_properties().await.inspect_err(|e| {
-                                log::warn!("Failed to update media properties: {e}");
+                                tracing::warn!("Failed to update media properties: {e}");
                             });
                         }
                     });
@@ -116,7 +116,7 @@ impl MediaSession {
                     rt_clone.block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
                             _ = session.update_timeline_properties().inspect_err(|e| {
-                                log::warn!("Failed to update timeline properties: {e}");
+                                tracing::warn!("Failed to update timeline properties: {e}");
                             });
                         }
                     });
@@ -147,7 +147,7 @@ impl MediaSession {
             let wrt_session = manager.GetCurrentSession();
 
             if let Ok(wrt_session) = wrt_session {
-                log::info!("Found an existing session");
+                tracing::info!("Found an existing session");
 
                 let session = MediaSessionStruct::new(wrt_session);
 
@@ -155,10 +155,11 @@ impl MediaSession {
             }
         }
 
-        log::info!("No active sessions found");
+        tracing::info!("No active sessions found");
         None
     }
 
+    #[must_use]
     pub fn get_info(&self) -> MediaInfo {
         let session = self.rt.block_on(self.session.lock());
 
