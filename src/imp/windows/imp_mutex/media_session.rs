@@ -30,7 +30,7 @@ impl MediaSession {
             .block_on(WRT_MediaManager::RequestAsync().unwrap())
             .unwrap();
 
-        let session_opt = Self::create_session(&Some(manager.clone()));
+        let session_opt = Self::create_session(Some(&manager));
         let session = Arc::new(Mutex::new(session_opt));
 
         Self::update_session(&rt, &session);
@@ -53,16 +53,18 @@ impl MediaSession {
 
         let token = self
             .manager
-            .CurrentSessionChanged(&TypedEventHandler::new(move |manager, _| {
-                rt.block_on(async {
-                    *session.lock().await = Self::create_session(manager);
-                });
+            .CurrentSessionChanged(&TypedEventHandler::new(
+                move |manager: &Option<WRT_MediaManager>, _| {
+                    rt.block_on(async {
+                        *session.lock().await = Self::create_session(manager.as_ref());
+                    });
 
-                Self::setup_session_listeners(&rt, &session);
-                Self::update_session(&rt, &session);
+                    Self::setup_session_listeners(&rt, &session);
+                    Self::update_session(&rt, &session);
 
-                Ok(())
-            }))
+                    Ok(())
+                },
+            ))
             .unwrap();
 
         self.event_token = Some(token);
@@ -140,8 +142,7 @@ impl MediaSession {
         });
     }
 
-    #[allow(clippy::ref_option, reason = "used like this by WinRT")]
-    fn create_session(manager: &Option<WRT_MediaManager>) -> Option<MediaSessionStruct> {
+    fn create_session(manager: Option<&WRT_MediaManager>) -> Option<MediaSessionStruct> {
         if let Some(manager) = manager {
             let wrt_session = manager.GetCurrentSession();
 
