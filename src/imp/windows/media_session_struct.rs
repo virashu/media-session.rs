@@ -13,7 +13,6 @@ use windows::{
 };
 
 use super::utils::stream_ref_to_bytes;
-use crate::traits::MediaSessionControls;
 use crate::utils::{micros_since_epoch, nt_to_unix};
 use crate::{MediaInfo, PlaybackState, PositionInfo};
 
