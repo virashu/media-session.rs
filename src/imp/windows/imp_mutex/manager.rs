@@ -6,13 +6,13 @@ use windows::{
     Media::Control::GlobalSystemMediaTransportControlsSessionManager as WRT_MediaManager,
 };
 
-use super::media_session_struct::{EventTokens, MediaSessionStruct};
+use super::session::{EventTokens, Session};
 use crate::{traits::MediaSessionControls, MediaInfo};
 
 pub struct MediaSession {
     rt: Arc<Runtime>,
     manager: WRT_MediaManager,
-    session: Arc<Mutex<Option<MediaSessionStruct>>>,
+    session: Arc<Mutex<Option<Session>>>,
     event_token: Option<EventRegistrationToken>,
 }
 
@@ -72,7 +72,7 @@ impl MediaSession {
 
     fn setup_session_listeners(
         rt: &Arc<Runtime>,
-        session_mutex: &Arc<Mutex<Option<MediaSessionStruct>>>,
+        session_mutex: &Arc<Mutex<Option<Session>>>,
     ) {
         let mut session_opt = rt.block_on(session_mutex.lock());
 
@@ -85,9 +85,9 @@ impl MediaSession {
                 .PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
                     rt_clone.block_on(async {
                         if let Some(session) = &mut *session_clone.lock().await {
-                            _ = session
-                                .update_playback_info()
-                                .inspect_err(|e| tracing::warn!("Failed to update playback info: {e}"));
+                            _ = session.update_playback_info().inspect_err(|e| {
+                                tracing::warn!("Failed to update playback info: {e}")
+                            });
                         }
                     });
                     Ok(())
@@ -132,24 +132,24 @@ impl MediaSession {
         }
     }
 
-    fn update_session(rt: &Runtime, session: &Arc<Mutex<Option<MediaSessionStruct>>>) {
+    fn update_session(rt: &Runtime, session: &Arc<Mutex<Option<Session>>>) {
         rt.block_on(async {
             let mut session = session.lock().await;
 
             if let Some(session) = &mut *session {
-                session.full_update().await;
+                session.update_all().await;
             }
         });
     }
 
-    fn create_session(manager: Option<&WRT_MediaManager>) -> Option<MediaSessionStruct> {
+    fn create_session(manager: Option<&WRT_MediaManager>) -> Option<Session> {
         if let Some(manager) = manager {
             let wrt_session = manager.GetCurrentSession();
 
             if let Ok(wrt_session) = wrt_session {
                 tracing::info!("Found an existing session");
 
-                let session = MediaSessionStruct::new(wrt_session);
+                let session = Session::new(wrt_session);
 
                 return Some(session);
             }
@@ -163,11 +163,10 @@ impl MediaSession {
     pub fn get_info(&self) -> MediaInfo {
         let session = self.rt.block_on(self.session.lock());
 
-        if let Some(session) = &*session {
-            return session.get_info();
-        }
-
-        MediaInfo::default()
+        session.as_ref().map_or_else(
+            MediaInfo::default,
+            super::session::Session::get_info,
+        )
     }
 }
 

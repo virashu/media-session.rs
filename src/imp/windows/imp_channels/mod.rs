@@ -1,3 +1,4 @@
-mod media_session;
+mod manager;
+mod session;
 
-pub use media_session::MediaSession;
+pub use manager::MediaSession;

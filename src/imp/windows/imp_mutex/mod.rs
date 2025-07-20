@@ -1,4 +1,4 @@
-mod media_session_struct;
-mod media_session;
+mod session;
+mod manager;
 
-pub use media_session::MediaSession;
+pub use manager::MediaSession;

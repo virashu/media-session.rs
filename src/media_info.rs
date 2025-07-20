@@ -1,4 +1,6 @@
-use crate::PlaybackState;
+use std::cmp::min;
+
+use crate::{utils::micros_since_epoch, PlaybackState};
 
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -19,6 +21,34 @@ pub struct MediaInfo {
     pub cover_raw: Vec<u8>,
 
     pub state: String, // stopped, paused, playing
+}
+
+impl MediaInfo {
+    fn apply_position(&mut self, pos_info: &PositionInfo) {
+        let position = match PlaybackState::from(self.state.as_ref()) {
+            PlaybackState::Stopped => 0,
+            PlaybackState::Paused => pos_info.pos_raw,
+            PlaybackState::Playing => {
+                let update_delta = micros_since_epoch() - pos_info.pos_last_update;
+
+                #[allow(clippy::cast_precision_loss, reason = "needed for multiplication")]
+                let track_delta = update_delta as f64 * pos_info.playback_rate;
+
+                #[allow(clippy::cast_possible_truncation, reason = "rounded")]
+                min(self.duration, pos_info.pos_raw + track_delta.round() as i64)
+            }
+        };
+
+        self.position = position;
+    }
+
+    /// Return a [`MediaInfo`] with updated position
+    #[must_use]
+    pub fn with_position(&self, pos_info: &PositionInfo) -> Self {
+        let mut info = self.clone();
+        info.apply_position(pos_info);
+        info
+    }
 }
 
 #[cfg(feature = "json")]

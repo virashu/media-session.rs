@@ -23,28 +23,29 @@ pub(super) struct EventTokens {
     pub timeline_properties: EventRegistrationToken,
 }
 
-pub(super) struct MediaSessionStruct {
+pub(super) struct Session {
+    inner: WRT_MediaSession,
+    event_tokens: Option<EventTokens>,
+
     media_info: MediaInfo,
     pos_info: PositionInfo,
-    session: WRT_MediaSession,
-    event_tokens: Option<EventTokens>,
 }
 
-impl MediaSessionStruct {
-    pub fn new(session: WRT_MediaSession) -> Self {
+impl Session {
+    pub fn new(wrt_session: WRT_MediaSession) -> Self {
         let media_info = MediaInfo::default();
         let pos_info = PositionInfo::default();
 
         Self {
             media_info,
             pos_info,
-            session,
+            inner: wrt_session,
             event_tokens: None,
         }
     }
 
     pub fn get_session(&self) -> WRT_MediaSession {
-        self.session.clone()
+        self.inner.clone()
     }
 
     pub fn set_event_tokens(&mut self, event_tokens: EventTokens) {
@@ -57,13 +58,13 @@ impl MediaSessionStruct {
 
     fn drop_event_listeners(&mut self) {
         if let Some(tokens) = &self.event_tokens {
-            self.session
+            self.inner
                 .RemoveMediaPropertiesChanged(tokens.media_properties)
                 .unwrap();
-            self.session
+            self.inner
                 .RemovePlaybackInfoChanged(tokens.playback_info)
                 .unwrap();
-            self.session
+            self.inner
                 .RemoveTimelinePropertiesChanged(tokens.timeline_properties)
                 .unwrap();
         }
@@ -71,7 +72,7 @@ impl MediaSessionStruct {
     }
 
     #[allow(clippy::future_not_send)]
-    pub async fn full_update(&mut self) {
+    pub async fn update_all(&mut self) {
         _ = self
             .update_media_properties()
             .await
@@ -84,36 +85,10 @@ impl MediaSessionStruct {
             .inspect_err(|_| tracing::warn!("Timeline properties are not accessible"));
     }
 
-    fn update_position_mut(info: &mut MediaInfo, pos_info: &PositionInfo) {
-        let position = match PlaybackState::from(info.state.as_ref()) {
-            PlaybackState::Stopped => 0i64,
-            PlaybackState::Paused => pos_info.pos_raw,
-            PlaybackState::Playing => {
-                let update_delta = micros_since_epoch() - pos_info.pos_last_update;
-
-                #[allow(clippy::cast_precision_loss, reason = "needed for multiplication")]
-                let track_delta = update_delta as f64 * pos_info.playback_rate;
-
-                #[allow(clippy::cast_possible_truncation, reason = "rounded")]
-                min(info.duration, pos_info.pos_raw + track_delta.round() as i64)
-            }
-        };
-
-        info.position = position;
-    }
-
-    pub fn get_info(&self) -> MediaInfo {
-        let mut info = self.media_info.clone();
-
-        Self::update_position_mut(&mut info, &self.pos_info);
-
-        info
-    }
-
     pub fn update_playback_info(&mut self) -> crate::Result<()> {
         tracing::debug!("Updating playback info");
 
-        let props: PlaybackInfo = self.session.GetPlaybackInfo()?;
+        let props: PlaybackInfo = self.inner.GetPlaybackInfo()?;
 
         self.media_info.state = match props.PlaybackStatus()? {
             PlaybackStatus::Playing => PlaybackState::Playing.into(),
@@ -130,7 +105,7 @@ impl MediaSessionStruct {
     pub async fn update_media_properties(&mut self) -> crate::Result<()> {
         tracing::debug!("Updating media properties");
 
-        let props: MediaProperties = self.session.TryGetMediaPropertiesAsync()?.await?;
+        let props: MediaProperties = self.inner.TryGetMediaPropertiesAsync()?.await?;
 
         self.media_info.title = props.Title()?.to_string();
         self.media_info.artist = props.Artist()?.to_string();
@@ -156,7 +131,7 @@ impl MediaSessionStruct {
     pub fn update_timeline_properties(&mut self) -> crate::Result<()> {
         tracing::debug!("Updating timeline properties");
 
-        let props: TimelineProperties = self.session.GetTimelineProperties()?;
+        let props: TimelineProperties = self.inner.GetTimelineProperties()?;
 
         // Windows' value is in seconds * 10^-7 (100 nanoseconds)
         // Mapping to micros (10^-6)
@@ -169,44 +144,46 @@ impl MediaSessionStruct {
         Ok(())
     }
 
-    pub async fn pause(&self) -> crate::Result<()> {
-        self.session.TryPauseAsync()?.await?;
+    pub fn get_info(&self) -> MediaInfo {
+        self.media_info.with_position(&self.pos_info)
+    }
 
+    //
+    // Controls
+    //
+
+    pub async fn pause(&self) -> crate::Result<()> {
+        self.inner.TryPauseAsync()?.await?;
         Ok(())
     }
 
     pub async fn play(&self) -> crate::Result<()> {
-        self.session.TryPlayAsync()?.await?;
-
+        self.inner.TryPlayAsync()?.await?;
         Ok(())
     }
 
     pub async fn toggle_pause(&self) -> crate::Result<()> {
-        self.session.TryTogglePlayPauseAsync()?.await?;
-
+        self.inner.TryTogglePlayPauseAsync()?.await?;
         Ok(())
     }
 
     pub async fn stop(&self) -> crate::Result<()> {
-        self.session.TryStopAsync()?.await?;
-
+        self.inner.TryStopAsync()?.await?;
         Ok(())
     }
 
     pub async fn next(&self) -> crate::Result<()> {
-        self.session.TrySkipNextAsync()?.await?;
-
+        self.inner.TrySkipNextAsync()?.await?;
         Ok(())
     }
 
     pub async fn prev(&self) -> crate::Result<()> {
-        self.session.TrySkipPreviousAsync()?.await?;
-
+        self.inner.TrySkipPreviousAsync()?.await?;
         Ok(())
     }
 }
 
-impl Drop for MediaSessionStruct {
+impl Drop for Session {
     fn drop(&mut self) {
         tracing::debug!("Session dropped");
         self.drop_event_listeners();
