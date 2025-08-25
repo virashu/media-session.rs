@@ -1,15 +1,15 @@
-use crate::traits;
-use crate::MediaInfo;
-use base64::display::Base64Display;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use dbus::blocking;
-use dbus::strings::BusName;
-use dbus::Path;
+use std::{fs, time::Duration};
+
+use base64::{display::Base64Display, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use dbus::{
     arg::{PropMap, RefArg},
+    blocking,
     blocking::stdintf::org_freedesktop_dbus::Properties as _,
+    strings::BusName,
+    Path,
 };
-use std::{fs, sync::Mutex, time::Duration};
+
+use crate::{traits, MediaInfo};
 
 const DBUS_DEST: &str = "org.freedesktop.DBus";
 // const DBUS_PATH: &str = "/org/freedesktop/DBus";
@@ -27,7 +27,7 @@ fn get_player_names(proxy: &Proxy) -> Vec<String> {
 }
 
 fn select_player(proxy: &Proxy) -> Option<String> {
-    let names = get_player_names(&proxy);
+    let names = get_player_names(proxy);
 
     let players: Vec<String> = names
         .iter()
@@ -38,14 +38,14 @@ fn select_player(proxy: &Proxy) -> Option<String> {
     let count = players.len();
 
     if count > 0 {
-        log::info!("Found {} players", count);
+        tracing::info!("Found {} players", count);
         if count > 1 {
             players
                 .iter()
                 .enumerate()
-                .for_each(|(i, p)| log::info!("  {i}) {p}"));
+                .for_each(|(i, p)| tracing::info!("  {i}) {p}"));
         }
-        log::info!("Selected: {}", players[0]);
+        tracing::info!("Selected: {}", players[0]);
         return Some(players[0].clone());
     }
 
@@ -71,40 +71,35 @@ fn get_dbus_proxy<'a>() -> blocking::Proxy<'a, Box<blocking::Connection>> {
     get_proxy(DBUS_DEST, "/")
 }
 
+#[derive(Default)]
 pub struct MediaSession {
-    player: Mutex<Option<blocking::Proxy<'static, Box<blocking::Connection>>>>,
-    prev_cover_url: Mutex<Option<String>>,
-    prev_cover_raw: Mutex<Option<Vec<u8>>>,
-    prev_cover_b64: Mutex<Option<String>>,
+    player: Option<blocking::Proxy<'static, Box<blocking::Connection>>>,
+    media_info: Option<MediaInfo>,
+    prev_cover_url: Option<String>,
+    prev_cover_raw: Option<Vec<u8>>,
+    prev_cover_b64: Option<String>,
 }
 
 type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
 
 impl MediaSession {
+    #[must_use]
     pub fn new() -> Self {
-        let player = match Self::try_get_player_dest() {
-            Some(player_dest) => {
+        let player = Self::try_get_player_dest().map_or_else(
+            || {
+                tracing::info!("No players found");
+                None
+            },
+            |player_dest| {
                 let player = get_proxy(player_dest, PLAYER_PATH);
                 Some(player)
-            }
-            None => {
-                log::info!("No players found");
-                None
-            }
-        };
+            },
+        );
 
-        let session = Self {
-            player: Mutex::new(player),
-            prev_cover_url: None.into(),
-            prev_cover_b64: None.into(),
-            prev_cover_raw: None.into(),
-        };
-
-        session.get_data_internal();
-        log::info!("");
-        log::info!("{:#?}", session.get_info());
-
-        session
+        Self {
+            player,
+            ..Default::default()
+        }
     }
 
     fn try_get_player_dest() -> Option<String> {
@@ -113,28 +108,28 @@ impl MediaSession {
         select_player(&dbus_proxy)
     }
 
-    fn get_data_internal(&self) {
-        if let Some(player) = &*self.player.lock().unwrap() {
-            let metadata: PropMap = player
-                .get("org.mpris.MediaPlayer2.Player", "Metadata")
-                .unwrap();
+    // fn get_data_internal(&self) {
+    //     if let Some(player) = &self.player {
+    //         let metadata: PropMap = player
+    //             .get("org.mpris.MediaPlayer2.Player", "Metadata")
+    //             .unwrap();
 
-            for (k, value) in &metadata {
-                if let Some(s) = value.as_str() {
-                    log::info!("  {}:\t {}", k, s);
-                } else if let Some(i) = value.as_i64() {
-                    log::info!("  {}:\t {}", k, i);
-                } else {
-                    log::info!("  {}:\t {:?}", k, value);
-                }
-            }
-        }
-    }
+    //         for (k, value) in &metadata {
+    //             if let Some(s) = value.as_str() {
+    //                 tracing::info!("  {}:\t {}", k, s);
+    //             } else if let Some(i) = value.as_i64() {
+    //                 tracing::info!("  {}:\t {}", k, i);
+    //             } else {
+    //                 tracing::info!("  {}:\t {:?}", k, value);
+    //             }
+    //         }
+    //     }
+    // }
 
-    fn update_player(&self) {
+    fn update_player(&mut self) {
         // Check for player change
         let new_dest = Self::try_get_player_dest();
-        let mut cur_player = self.player.lock().unwrap();
+        let cur_player = &mut self.player;
         let cur_dest = cur_player.as_ref().map(|p| p.destination.to_string());
 
         if new_dest != cur_dest {
@@ -144,16 +139,15 @@ impl MediaSession {
         }
     }
 
-    pub fn get_info(&self) -> MediaInfo {
-        self.update_player();
-
-        if let Some(player) = &*self.player.lock().unwrap() {
+    fn update_info(&mut self) {
+        if let Some(player) = &self.player {
             // Error on player application close
             let metadata: Result<PropMap, dbus::Error> =
                 player.get(PLAYER_INTERFACE_PLAYER, "Metadata");
 
             if metadata.is_err() {
-                return MediaInfo::default();
+                self.media_info = None;
+                return;
             }
 
             let metadata: PropMap = metadata.unwrap();
@@ -172,7 +166,7 @@ impl MediaSession {
                     cover_raw = None;
                     cover_b64 = None;
                 } else {
-                    log::info!("Cover url: {cover_url}");
+                    tracing::info!("Cover url: {cover_url}");
                     let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
                     // cover_raw = self.get_cover_raw(cover_url.clone());
                     cover_raw = None;
@@ -183,7 +177,7 @@ impl MediaSession {
                 cover_b64 = None;
             }
 
-            return MediaInfo {
+            self.media_info = Some(MediaInfo {
                 title: get_string(&metadata, "xesam:title").unwrap_or_default(),
                 artist: get_first_string(&metadata, "xesam:artist").unwrap_or_default(),
                 duration: get_i64(&metadata, "mpris:length").unwrap_or_default(),
@@ -193,67 +187,75 @@ impl MediaSession {
                 cover_b64: cover_b64.unwrap_or_else(|| String::from("Missing")),
                 album_title: get_string(&metadata, "xesam:albumArtist").unwrap_or_default(),
                 album_artist: get_string(&metadata, "xesam:album").unwrap_or_default(),
-            };
+            });
         }
+    }
 
-        MediaInfo::default()
+    pub fn update(&mut self) {
+        self.update_player();
+        self.update_info();
+    }
+
+    #[must_use]
+    pub fn get_info(&self) -> MediaInfo {
+        self.media_info.clone().unwrap_or_default()
     }
 
     fn get_cover_raw(&mut self, cover_url: String) -> Option<Vec<u8>> {
-        if let Some(prev_url) = &*self.prev_cover_url.lock().unwrap() {
+        if let Some(prev_url) = &self.prev_cover_url {
             if *prev_url == cover_url {
-                return self.prev_cover_raw.lock().unwrap().clone();
+                return self.prev_cover_raw.clone();
             }
         }
 
         {
-            *self.prev_cover_url.lock().unwrap() = Some(cover_url.clone());
+            self.prev_cover_url = Some(cover_url.clone());
         }
-        log::info!("Reading cover at: {}", cover_url);
+        tracing::info!("Reading cover at: {}", cover_url);
 
         let cover_raw = fs::read(cover_url);
 
         if let Ok(c) = cover_raw {
-            log::info!("Read cover; size: {} Bytes", c.len());
+            tracing::info!("Read cover; size: {} Bytes", c.len());
             return Some(c);
         }
 
         if let Err(e) = cover_raw {
-            log::error!("Failed to read cover: {e}");
+            tracing::error!("Failed to read cover: {e}");
         }
 
         None
     }
 
-    fn get_cover_b64(&self, cover_url: String) -> Option<String> {
-        if let Some(prev_url) = &*self.prev_cover_url.lock().unwrap() {
+    fn get_cover_b64(&mut self, cover_url: String) -> Option<String> {
+        if let Some(prev_url) = &self.prev_cover_url {
             if *prev_url == cover_url {
-                return self.prev_cover_b64.lock().unwrap().clone();
+                return self.prev_cover_b64.clone();
             }
         }
 
         {
-            *self.prev_cover_url.lock().unwrap() = Some(cover_url.clone());
+            self.prev_cover_url = Some(cover_url.clone());
         }
         let cover_raw = fs::read(cover_url);
 
         if let Ok(c) = cover_raw {
-            log::info!("B64 cover read success");
+            tracing::info!("B64 cover read success");
             let b64 = Base64Display::new(&c, &BASE64_STANDARD).to_string();
             // let b64 = BASE64_STANDARD.encode(c);
-            *self.prev_cover_b64.lock().unwrap() = Some(b64.clone());
+            self.prev_cover_b64 = Some(b64.clone());
 
             return Some(b64);
         }
 
-        log::warn!("Failed to read file for b64!");
+        tracing::warn!("Failed to read file for b64!");
 
         None
     }
 }
 
-fn action(player_opt: &Option<Proxy>, command: &str) -> crate::Result<()> {
-    if let Some(player) = &player_opt {
+fn action(player_opt: Option<&Proxy>, command: &str) -> crate::Result<()> {
+    if let Some(player) = player_opt {
         return player
             .method_call(PLAYER_INTERFACE_PLAYER, command, ())
             .map_err(crate::error::Error::from);
@@ -264,22 +266,22 @@ fn action(player_opt: &Option<Proxy>, command: &str) -> crate::Result<()> {
 
 impl traits::MediaSessionControls for MediaSession {
     fn next(&self) -> crate::Result<()> {
-        action(&self.player.lock().unwrap(), "Next")
+        action(self.player.as_ref(), "Next")
     }
     fn pause(&self) -> crate::Result<()> {
-        action(&self.player.lock().unwrap(), "Pause")
+        action(self.player.as_ref(), "Pause")
     }
     fn play(&self) -> crate::Result<()> {
-        action(&self.player.lock().unwrap(), "Play")
+        action(self.player.as_ref(), "Play")
     }
     fn prev(&self) -> crate::Result<()> {
-        action(&self.player.lock().unwrap(), "Previous")
+        action(self.player.as_ref(), "Previous")
     }
     fn stop(&self) -> crate::Result<()> {
-        action(&self.player.lock().unwrap(), "Stop")
+        action(self.player.as_ref(), "Stop")
     }
     fn toggle_pause(&self) -> crate::Result<()> {
-        action(&self.player.lock().unwrap(), "PlayPause")
+        action(self.player.as_ref(), "PlayPause")
     }
 }
 
