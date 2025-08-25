@@ -13,6 +13,8 @@ impl PlaybackState {
     pub fn from_string(s: String) -> Result<Self, Error> {
         Self::from_str(&s)
     }
+
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Stopped => "stopped",

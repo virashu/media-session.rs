@@ -11,8 +11,10 @@ use dbus::{
 
 use crate::{traits, MediaInfo};
 
+type Proxy<'p> = blocking::Proxy<'p, Box<blocking::Connection>>;
+
 const DBUS_DEST: &str = "org.freedesktop.DBus";
-// const DBUS_PATH: &str = "/org/freedesktop/DBus";
+const DBUS_PATH: &str = "/"; // "/org/freedesktop/DBus"
 
 const PLAYER_PATH: &str = "/org/mpris/MediaPlayer2";
 
@@ -35,31 +37,31 @@ fn select_player(proxy: &Proxy) -> Option<String> {
         .cloned()
         .collect();
 
-    let count = players.len();
-
-    if count > 0 {
-        tracing::info!("Found {} players", count);
-        if count > 1 {
-            players
-                .iter()
-                .enumerate()
-                .for_each(|(i, p)| tracing::info!("  {i}) {p}"));
-        }
-        tracing::info!("Selected: {}", players[0]);
-        return Some(players[0].clone());
+    if players.is_empty() {
+        return None;
     }
 
-    None
+    let count = players.len();
+
+    tracing::info!("Found {} players", count);
+    if count > 1 {
+        players
+            .iter()
+            .enumerate()
+            .for_each(|(i, p)| tracing::info!("  {i}) {p}"));
+    }
+    tracing::info!("Selected: {}", players[0]);
+    Some(players[0].clone())
 }
 
-fn get_proxy<'a, D, P>(dest: D, path: P) -> blocking::Proxy<'a, Box<blocking::Connection>>
+fn get_proxy<'p, D, P>(dest: D, path: P) -> Proxy<'p>
 where
-    D: Into<BusName<'a>>,
-    P: Into<Path<'a>>,
+    D: Into<BusName<'p>>,
+    P: Into<Path<'p>>,
 {
     let connection = Box::new(blocking::Connection::new_session().unwrap());
 
-    blocking::Proxy::<'a, Box<blocking::Connection>> {
+    blocking::Proxy::<'p, Box<blocking::Connection>> {
         destination: dest.into(),
         path: path.into(),
         timeout: TIMEOUT,
@@ -67,8 +69,8 @@ where
     }
 }
 
-fn get_dbus_proxy<'a>() -> blocking::Proxy<'a, Box<blocking::Connection>> {
-    get_proxy(DBUS_DEST, "/")
+fn get_dbus_proxy<'p>() -> Proxy<'p> {
+    get_proxy(DBUS_DEST, DBUS_PATH)
 }
 
 #[derive(Default)]
@@ -79,8 +81,6 @@ pub struct MediaSession {
     prev_cover_raw: Option<Vec<u8>>,
     prev_cover_b64: Option<String>,
 }
-
-type Proxy<'l> = blocking::Proxy<'l, Box<blocking::Connection>>;
 
 impl MediaSession {
     #[must_use]
@@ -108,33 +108,14 @@ impl MediaSession {
         select_player(&dbus_proxy)
     }
 
-    // fn get_data_internal(&self) {
-    //     if let Some(player) = &self.player {
-    //         let metadata: PropMap = player
-    //             .get("org.mpris.MediaPlayer2.Player", "Metadata")
-    //             .unwrap();
-
-    //         for (k, value) in &metadata {
-    //             if let Some(s) = value.as_str() {
-    //                 tracing::info!("  {}:\t {}", k, s);
-    //             } else if let Some(i) = value.as_i64() {
-    //                 tracing::info!("  {}:\t {}", k, i);
-    //             } else {
-    //                 tracing::info!("  {}:\t {:?}", k, value);
-    //             }
-    //         }
-    //     }
-    // }
-
     fn update_player(&mut self) {
         // Check for player change
         let new_dest = Self::try_get_player_dest();
-        let cur_player = &mut self.player;
-        let cur_dest = cur_player.as_ref().map(|p| p.destination.to_string());
+        let cur_dest = self.player.as_ref().map(|p| p.destination.to_string());
 
         if new_dest != cur_dest {
             if let Some(dest) = new_dest {
-                *cur_player = Some(get_proxy(dest, PLAYER_PATH));
+                self.player = Some(get_proxy(dest, PLAYER_PATH));
             }
         }
     }
@@ -158,24 +139,17 @@ impl MediaSession {
             let state: Result<String, dbus::Error> =
                 player.get(PLAYER_INTERFACE_PLAYER, "PlaybackStatus");
 
-            let cover_raw: Option<Vec<u8>>;
-            let cover_b64: Option<String>;
-
-            if let Some(cover_url) = get_string(&metadata, "mpris:artUrl") {
-                if cover_url.is_empty() {
-                    cover_raw = None;
-                    cover_b64 = None;
-                } else {
-                    tracing::info!("Cover url: {cover_url}");
-                    let cover_url = cover_url.strip_prefix("file://").unwrap().to_string();
+            let (cover_raw, cover_b64) = get_string(&metadata, "mpris:artUrl")
+                .filter(|url| !url.is_empty())
+                .map_or((None, None), |url| {
+                    tracing::info!("Cover url: {url}");
+                    let cover_url = url.strip_prefix("file://").unwrap().to_string();
                     // cover_raw = self.get_cover_raw(cover_url.clone());
-                    cover_raw = None;
-                    cover_b64 = self.get_cover_b64(cover_url);
-                }
-            } else {
-                cover_raw = None;
-                cover_b64 = None;
-            }
+                    let cover_raw = None;
+                    let cover_b64 = self.get_cover_b64(cover_url);
+
+                    (cover_raw, cover_b64)
+                });
 
             self.media_info = Some(MediaInfo {
                 title: get_string(&metadata, "xesam:title").unwrap_or_default(),
@@ -201,56 +175,45 @@ impl MediaSession {
         self.media_info.clone().unwrap_or_default()
     }
 
-    fn get_cover_raw(&mut self, cover_url: String) -> Option<Vec<u8>> {
+    fn get_cover_raw(&mut self, cover_url: impl AsRef<str>) -> Option<Vec<u8>> {
         if let Some(prev_url) = &self.prev_cover_url {
-            if *prev_url == cover_url {
+            if *prev_url == cover_url.as_ref() {
                 return self.prev_cover_raw.clone();
             }
         }
 
-        {
-            self.prev_cover_url = Some(cover_url.clone());
-        }
-        tracing::info!("Reading cover at: {}", cover_url);
+        self.prev_cover_url = Some(cover_url.as_ref().to_owned());
 
-        let cover_raw = fs::read(cover_url);
+        tracing::info!("Reading cover at: {}", cover_url.as_ref());
 
-        if let Ok(c) = cover_raw {
-            tracing::info!("Read cover; size: {} Bytes", c.len());
-            return Some(c);
-        }
+        let cover_raw = fs::read(cover_url.as_ref())
+            .inspect(|cover| tracing::info!("Read cover; size: {} Bytes", cover.len()))
+            .inspect_err(|e| tracing::error!("Failed to read cover: {e}"))
+            .ok();
 
-        if let Err(e) = cover_raw {
-            tracing::error!("Failed to read cover: {e}");
-        }
+        self.prev_cover_raw.clone_from(&cover_raw);
 
-        None
+        cover_raw
     }
 
-    fn get_cover_b64(&mut self, cover_url: String) -> Option<String> {
+    fn get_cover_b64(&mut self, cover_url: impl AsRef<str>) -> Option<String> {
         if let Some(prev_url) = &self.prev_cover_url {
-            if *prev_url == cover_url {
+            if *prev_url == cover_url.as_ref() {
                 return self.prev_cover_b64.clone();
             }
         }
 
-        {
-            self.prev_cover_url = Some(cover_url.clone());
-        }
-        let cover_raw = fs::read(cover_url);
+        self.prev_cover_url = Some(cover_url.as_ref().to_owned());
 
-        if let Ok(c) = cover_raw {
-            tracing::info!("B64 cover read success");
-            let b64 = Base64Display::new(&c, &BASE64_STANDARD).to_string();
-            // let b64 = BASE64_STANDARD.encode(c);
-            self.prev_cover_b64 = Some(b64.clone());
+        let cover_b64 = fs::read(cover_url.as_ref())
+            .inspect(|_| tracing::info!("B64 cover read success"))
+            .inspect_err(|e| tracing::warn!("Failed to read file for b64: {e}"))
+            .map(|raw| Base64Display::new(&raw, &BASE64_STANDARD).to_string())
+            .ok();
 
-            return Some(b64);
-        }
+        self.prev_cover_b64.clone_from(&cover_b64);
 
-        tracing::warn!("Failed to read file for b64!");
-
-        None
+        cover_b64
     }
 }
 

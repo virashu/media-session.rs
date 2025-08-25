@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
 use std::{
     io::{stdout, Write},
     time::Duration,
@@ -33,11 +40,6 @@ fn progress_bar(pos_percent: usize) -> String {
 }
 
 fn update(info: MediaInfo) {
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss,
-        clippy::cast_possible_truncation
-    )]
     let pos_percent: usize = (info.position as f64 / info.duration as f64 * 100.0) as usize;
 
     let progress_bar = progress_bar(pos_percent);
